@@ -47,9 +47,7 @@ button:hover { transform: translateY(-1px) }
 
 .stat { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); border-radius: 16px; padding: 12px }
 .stat .k { color: var(--muted); font-size: .82rem }
-.stat .v { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 1.2rem }
-
-.big { font-size: 2rem; font-weight: 700; letter-spacing: .2px }
+.stat .v { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 1.6rem; font-weight: 700; letter-spacing: .2px }
 .price { color: var(--accent) }
 .delta-pos { color: var(--success) }
 .delta-neg { color: var(--danger) }
@@ -60,12 +58,13 @@ button:hover { transform: translateY(-1px) }
 .footer { text-align: center; color: var(--muted); font-size:.85rem; padding: 12px 0 20px }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace }
 
-.advanced{ display:none !important } </style>
+.advanced{ display:none !important } .gridResults{display:grid;gap:12px} </style>
 
 </head>
 <body>
   <header>
-    <h1>حساب السعر العادل لــ BTC Up/Down — نافذة ساعة</h1>
+    <h1>BTC Up/Down — Hybrid</h1>
+    <div class="k">Live from Binance · Hour window (ET)</div>
   </header>
   <div class="container grid">
     <!-- LEFT: Live + Inputs -->
@@ -78,7 +77,7 @@ button:hover { transform: translateY(-1px) }
           </div>
           <div style="text-align:end">
             <div class="k">الوقت المتبقي حتى نهاية النافذة</div>
-            <div class="big mono" id="countdown">—</div>
+            <div class="big mono" id="countdownTop">00:00</div>
           </div>
         </div>
         <hr style="border:none; border-top:1px solid rgba(255,255,255,.06); margin:14px 0">
@@ -100,8 +99,6 @@ button:hover { transform: translateY(-1px) }
           <div>
             <label>التحديث تلقائي كل ساعة (ET ثابت)</label>
             <div class="k">لا حاجة لاختصارات. يتم ضبط نهاية الساعة تلقائيًا على أعلى الساعة التالية بتوقيت ET.</div>
-          </div>
-          </div>
         </div>
         <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap">
           <button class="btn" id="syncK">اجعل K = السعر الحالي</button>
@@ -114,28 +111,17 @@ button:hover { transform: translateY(-1px) }
     </section><!-- RIGHT: Results -->
 <section class="card">
   <div class="inner">
-    <div class="cols">
-      <div class="stat">
-        <div class="k">الفرق (السعر − K)</div>
-        <div class="v mono" id="delta">—</div>
-      </div>
-      <div class="stat">
-        <div class="k">الزمن المتبقي (سنوات)</div>
-        <div class="v mono" id="tau">—</div>
-      </div>
+    <div class="gridResults">
+      <div class="stat"><div class="k">PRICE</div><div class="v mono" id="priceStat">—</div></div>
+      <div class="stat"><div class="k">PRICE TO BEAT</div><div class="v mono" id="kView">—</div></div>
+      <div class="stat"><div class="k">TIME LEFT</div><div class="v mono" id="countdownStat">—</div></div>
+      <div class="stat"><div class="k">GAP TO BEAT ($)</div><div class="v mono" id="delta">—</div></div>
+      <div class="stat"><div class="k">EXPECTED MOVE ($)</div><div class="v mono" id="em">—</div></div>
+      <div class="stat"><div class="k">STRENGTH (%)</div><div class="v mono" id="strength">—</div></div>
+      <div class="stat"><div class="k">UP %</div><div class="v mono" id="pUp">—</div></div>
+      <div class="stat"><div class="k">DOWN %</div><div class="v mono" id="pDown">—</div></div>
     </div>
-
-    <div class="row" style="margin-top:12px; gap:12px">
-      <div class="pill up">
-        ↑ Up: <span class="mono" id="pUp">—</span>
-      </div>
-      <div class="pill down">
-        ↓ Down: <span class="mono" id="pDown">—</span>
-      </div>
-    </div>
-    <div style="margin-top:10px; color:var(--muted); font-size:.9rem">
-      الأسعار العادلة ≈ الإحتمال × 100 سنت. (تجاهُل الرسوم والسبريد)
-    </div>
+    <div class="k" id="lastUpdate" style="margin-top:10px; text-align:center">Last update: —</div>
   </div>
 </section>
 
@@ -221,6 +207,7 @@ button:hover { transform: translateY(-1px) }
     // ---------- Live price (WebSocket) ----------
     let lastPrice = NaN;
     let ws, wsRetryTimer = null;
+    let lastUpdateAt = null;
     const WS_URL = 'wss://stream.binance.com:9443/ws/btcusdt@trade';
 
     function connectWS(retryMs = 1000){
@@ -235,6 +222,8 @@ button:hover { transform: translateY(-1px) }
             if(Number.isFinite(p)){
               lastPrice = p;
               $('#price').textContent = '$' + fmtUSD(p);
+              const ps = document.getElementById('priceStat'); if(ps) ps.textContent = fmtUSD(p);
+              lastPrice = p; lastUpdateAt = new Date();
               if(!$('#k').value){ $('#k').value = p.toFixed(2); }
             }
           } catch(e){}
@@ -267,6 +256,33 @@ button:hover { transform: translateY(-1px) }
         const a = document.createElement('a'); a.href = url; a.download = 'btc-hourly-log.csv'; document.body.appendChild(a); a.click(); a.remove();
         setTimeout(()=> URL.revokeObjectURL(url), 1000);
       }catch(e){ console.warn(e); }
+    });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'btc-hourly-log.csv'; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=> URL.revokeObjectURL(url), 1000);
+      }catch(e){ console.warn(e); }
+    }
+
+    // Extra display helpers
+    function extraDisplay(tau){
+      const Kview = Number($('#k').value);
+      if(Number.isFinite(Kview)) { const el = document.getElementById('kView'); if(el) el.textContent = fmtUSD(Kview); }
+      if(Number.isFinite(lastPrice) && Number.isFinite(Kview)){
+        const d = lastPrice - Kview;
+        const signCls = d>=0 ? 'delta-pos' : 'delta-neg';
+        $('#delta').innerHTML = '<span class="'+signCls+'">'+(d>=0?'+':'')+fmtUSD(d)+'</span>';
+      }
+      const sigmaPct = Number($('#sigma').value);
+      if(Number.isFinite(lastPrice) && Number.isFinite(tau) && tau>0 && Number.isFinite(sigmaPct)){
+        const sigma = sigmaPct/100;
+        const emv = lastPrice * sigma * Math.sqrt(tau);
+        const eme = document.getElementById('em'); if(eme) eme.innerHTML = '<span class="delta-pos">'+fmtUSD(emv)+'</span>';
+        const gap2 = Number.isFinite(Kview) ? Math.abs(lastPrice - Kview) : NaN;
+        if(Number.isFinite(gap2)){
+          const st = emv / (gap2 || 1e-9) * 100;
+          const se = document.getElementById('strength'); if(se) se.innerHTML = '<span class="delta-pos">'+st.toFixed(1)+'%<\/span>';
+        }
+      }
     }
 
     // ---------- Countdown & Calculations ----------
@@ -312,21 +328,26 @@ button:hover { transform: translateY(-1px) }
       const now = new Date();
       let leftMs = end ? (end.getTime() - now.getTime()) : NaN;
       if(!Number.isFinite(leftMs)) {
-        $('#countdown').textContent = '—';
+        const el1 = document.getElementById('countdownTop'); if(el1) el1.textContent = '—';
+        const el2 = document.getElementById('countdownStat'); if(el2) el2.textContent = '—';
       } else if(leftMs <= 0) {
-        $('#countdown').textContent = 'انتهت';
+        const txt = 'انتهت';
+        const el1 = document.getElementById('countdownTop'); if(el1) el1.textContent = txt;
+        const el2 = document.getElementById('countdownStat'); if(el2) el2.textContent = txt;
       } else {
-        const s = Math.max(0, Math.floor(leftMs/1000));
-        $('#countdown').textContent = s.toLocaleString('en-US') + ' ثانية';
+        const total = Math.max(0, Math.floor(leftMs/1000));
+        const m = Math.floor(total/60);
+        const sec = total % 60;
+        const txt = `${m}:${String(sec).padStart(2,'0')}`;
+        const el1 = document.getElementById('countdownTop'); if(el1) el1.textContent = txt;
+        const el2 = document.getElementById('countdownStat'); if(el2) el2.textContent = txt;
       }
 
       // compute tau
       let tau = NaN;
       if(Number.isFinite(leftMs) && leftMs>0){
         tau = leftMs / (1000 * 60 * 60 * 24 * 365);
-        $('#tau').textContent = tau.toExponential(3);
-      } else {
-        $('#tau').textContent = '—';
+        extraDisplay(tau);
       }
 
       // compute delta
@@ -345,9 +366,9 @@ button:hover { transform: translateY(-1px) }
         const sigma = sigmaPct/100;
         const pUp = bsUpProb(lastPrice, K, tau, sigma);
         if(Number.isFinite(pUp)){
-          $('#pUp').textContent = `${fmtPct(pUp)} (≈ ${(pUp*100).toFixed(1)}¢)`;
+          $('#pUp').textContent = `${fmtPct(pUp)}`;
           const pDown = 1 - pUp;
-          $('#pDown').textContent = `${fmtPct(pDown)} (≈ ${(pDown*100).toFixed(1)}¢)`;
+          $('#pDown').textContent = `${fmtPct(pDown)}`;
         } else {
           $('#pUp').textContent = '—';
           $('#pDown').textContent = '—';
@@ -359,27 +380,6 @@ button:hover { transform: translateY(-1px) }
     }
 
     // ---------- Bindings ----------
-    document.getElementById('nextLocal')?.addEventListener('click', () => {
-      const d = nextHourLocal();
-      $('#end').value = toDatetimeLocalValue(d);
-      updateETLabel(d);
-      saveSettings();
-    });
-      $('#end').value = toDatetimeLocalValue(d);
-      updateETLabel(d);
-      saveSettings();
-    });
-    document.getElementById('nextET')?.addEventListener('click', () => {
-      const d = nextHourInTZ('America/New_York');
-      $('#end').value = toDatetimeLocalValue(d);
-      updateETLabel(d);
-      saveSettings();
-    });
-      // Show as local clock value
-      $('#end').value = toDatetimeLocalValue(d);
-      updateETLabel(d);
-      saveSettings();
-    });
     $('#syncK').addEventListener('click', () => {
       if(Number.isFinite(lastPrice)){
         $('#k').value = lastPrice.toFixed(2);
@@ -390,8 +390,10 @@ button:hover { transform: translateY(-1px) }
 
     // Persist input changes live
     ['k','sigma','end'].forEach(id => {
-      $('#'+id).addEventListener('change', saveSettings);
-      $('#'+id).addEventListener('input', () => {/* live tick */});
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.addEventListener('change', saveSettings);
+      el.addEventListener('input', () => {/* live tick */});
     });
 
     // logging controls
@@ -399,18 +401,6 @@ button:hover { transform: translateY(-1px) }
     if(dl) dl.addEventListener('click', downloadCSV);
     const clr = document.getElementById('clearLog');
     if(clr) clr.addEventListener('click', () => { logs.length = 0; saveLogs(); alert('تم مسح السجل'); });
-      if(!el) return;
-      el.addEventListener('change', () => {
-        saveSettings();
-        if(id==='autoHourly' && el.checked){
-          const mode = document.getElementById('hourlyTZ').value;
-          const d = (mode === 'ET') ? nextHourInTZ('America/New_York') : nextHourLocal();
-          document.getElementById('end').value = toDatetimeLocalValue(d);
-          updateETLabel(d);
-        }
-      });
-    });
-    });
 
     // Init
     loadSettings();
@@ -422,5 +412,6 @@ button:hover { transform: translateY(-1px) }
     connectWS();
     tick();
     setInterval(tick, 250);
+    setInterval(() => { if(lastUpdateAt){ const s = lastUpdateAt.toISOString().replace('T',' ').slice(0,19)+' UTC'; $('#lastUpdate').textContent = `Last update: ${s} · WebSocket: Binance · TZ: America/New_York (ET)`; } }, 1000);
   </script></body>
 </html>
