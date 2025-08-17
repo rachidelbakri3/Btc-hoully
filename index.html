@@ -36,14 +36,19 @@
 
 <script>
 const SYMBOL = 'BTCUSDT';
-const WS_URL = `wss://stream.binance.com:9443/ws/${SYMBOL.toLowerCase()}@trade`;
-const API = 'https://cors-proxy.fringe.zone/https://api.binance.com/api/v3';
+const WS_SPOT = `wss://stream.binance.com:9443/ws/${SYMBOL.toLowerCase()}@trade`;
 
-let ws, price=null, priceToBeat=null, sigma1h=null;
+// ⚠️ غيّر الرمز لعقد ATM صحيح (هنا مثال عقد ينتهي Aug 17, 2025)
+// يمكنك تغييره حسب تاريخ اليوم أو أقرب ATM
+const WS_OPT = "wss://nbstream.binance.com/eoptions/stream?streams=BTC-250817-60000-C@markPrice";
+
+let wsSpot, wsOpt;
+let price=null, priceToBeat=null, impliedVol=null;
 
 function fmt(n,d=2){return Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});}
 function setText(id,txt,cls){let el=document.getElementById(id); if(!el)return;
   el.classList.remove('pos','neg'); if(cls)el.classList.add(cls); el.textContent=txt;}
+
 function getParts(date,tz){return new Intl.DateTimeFormat('en-US',{timeZone:tz,hour12:false,
   year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(date);}
 function tzOffsetMs(tz){const now=new Date(); const pET=getParts(now,tz), pUTC=getParts(now,'UTC');
@@ -59,47 +64,49 @@ function erf(x){const s=Math.sign(x);x=Math.abs(x);
   const t=1/(1+p*x);const y=1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);return s*y;}
 const cdf=x=>0.5*(1+erf(x/Math.SQRT2));
 
+// تحميل Price to Beat (سعر الافتتاح بداية الساعة)
 async function loadPriceToBeat(){
   try{
     const start=startOfETHourUTC();const end=start+60000;
-    const res=await fetch(`${API}/klines?symbol=${SYMBOL}&interval=1m&startTime=${start}&endTime=${end}&limit=1`);
+    const res=await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&startTime="+start+"&endTime="+end+"&limit=1")}`);
     const arr=await res.json(); if(arr.length){priceToBeat=parseFloat(arr[0][1]);setText('ptb',fmt(priceToBeat));}
   }catch(e){console.error("PTB error",e);}
 }
 
-// حساب التذبذب من آخر 60 شمعة (realized vol)
-async function loadVolatility(){
-  try{
-    const res=await fetch(`${API}/klines?symbol=${SYMBOL}&interval=1m&limit=60`);
-    const kl=await res.json(); if(!Array.isArray(kl)||kl.length<2)return;
-    const closes=kl.map(k=>+k[4]); let rets=[];
-    for(let i=1;i<closes.length;i++){rets.push(Math.log(closes[i]/closes[i-1]));}
-    const mean=rets.reduce((a,b)=>a+b,0)/rets.length;
-    const variance=rets.reduce((a,b)=>a+(b-mean)**2,0)/(rets.length-1);
-    const sigma1m=Math.sqrt(variance); 
-    sigma1h = sigma1m*Math.sqrt(60); // تقلب ساعة كاملة
-  }catch(e){console.error("Vol error",e);}
+function connectSpotWS(){
+  wsSpot=new WebSocket(WS_SPOT);
+  wsSpot.onmessage=(ev)=>{const d=JSON.parse(ev.data); price=parseFloat(d.p);
+    setText('price',fmt(price)); updateDerived(); setFooter();};
+  wsSpot.onclose=()=>setTimeout(connectSpotWS,1500);
 }
 
-function connectWS(){
-  if(ws) try{ws.close();}catch{}; ws=new WebSocket(WS_URL);
-  ws.onmessage=(ev)=>{const d=JSON.parse(ev.data); price=parseFloat(d.p);
-    setText('price',fmt(price)); updateDerived(); setFooter();};
-  ws.onclose=()=>setTimeout(connectWS,1500);
+function connectOptionsWS(){
+  wsOpt=new WebSocket(WS_OPT);
+  wsOpt.onmessage=(ev)=>{
+    try{
+      const d=JSON.parse(ev.data);
+      if(d && d.data && d.data.markIv){
+        impliedVol=parseFloat(d.data.markIv)/100; // يحول إلى نسبة
+      }
+    }catch(e){console.error("Opt WS error",e);}
+  };
+  wsOpt.onclose=()=>setTimeout(connectOptionsWS,5000);
 }
 
 function updateDerived(){
-  if(price==null||priceToBeat==null||sigma1h==null)return;
+  if(price==null||priceToBeat==null||impliedVol==null)return;
   const gap=price-priceToBeat;
   setText('gap',(gap>=0?'+':'')+fmt(gap),gap>=0?'pos':'neg');
 
-  // Black–Scholes Expected Move (حسب الوقت المتبقي)
+  // الوقت المتبقي بالسنوات
   const secs=secondsLeftInETHour();
-  const frac=secs/3600; // جزء الساعة المتبقي
-  const bsMove=price*sigma1h*Math.sqrt(frac);
+  const T=secs/(365*24*3600);
+
+  // Black–Scholes Expected Move
+  const bsMove=price*impliedVol*Math.sqrt(T);
   setText('em',fmt(bsMove,2));
 
-  // Strength (عكسي: gap قريب = قوي)
+  // Strength
   const strength=100-Math.min(Math.abs(gap)/bsMove*100,100);
   setText('strength',fmt(strength,1));
 
@@ -117,11 +124,12 @@ function tick(){
 }
 
 function setFooter(){document.getElementById('footer').textContent=
-  "Last update: "+new Date().toISOString().replace("T"," ").replace("Z"," UTC")+" · WebSocket: Binance · TZ: America/New_York (ET)";}
+  "Last update: "+new Date().toISOString().replace("T"," ").replace("Z"," UTC")+" · WebSocket: Binance (Spot+Options) · TZ: America/New_York (ET)";}
 
 async function init(){
-  connectWS(); await loadPriceToBeat(); await loadVolatility();
-  setInterval(loadVolatility,60000); // تحديث التذبذب كل دقيقة
+  connectSpotWS();
+  connectOptionsWS();
+  await loadPriceToBeat();
   setInterval(tick,1000);
 }
 init();
