@@ -1,116 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>BTC Up/Down Hybrid</title>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+<style>
+  body{background:#0f172a;color:#fff;font-family:sans-serif;padding:20px}
+  .wrap{max-width:500px;margin:auto}
+  .kpi{display:flex;justify-content:space-between;padding:8px;background:#1e293b;margin:5px 0;border-radius:8px}
+  .pos{color:#4ade80}
+  .neg{color:#f87171}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="kpi"><span>Price</span><b id="price">—</b></div>
+  <div class="kpi"><span>Price to Beat</span><b id="ptb">—</b></div>
+  <div class="kpi"><span>Time Left</span><b id="timeLeft">—</b></div>
+  <div class="kpi"><span>Gap to Beat ($)</span><b id="gap">—</b></div>
+  <div class="kpi"><span>Expected Move ($)</span><b id="expMove">—</b></div>
+  <div class="kpi"><span>Up %</span><b id="upPct" class="pos">—</b></div>
+  <div class="kpi"><span>Down %</span><b id="downPct" class="neg">—</b></div>
+</div>
+
 <script>
-// ---------- helpers ----------
-const phi = x => 0.5 * (1 + Math.erf(x / Math.SQRT2));        // CDF للنورمال
-const ln  = Math.log;
+const { DateTime } = luxon;
+let price = null, ptb = null, sigmaAnn = null;
 
-// يحسب sigma السنوي من log-returns خلال نافذة دقائق (EWMA بسيطة)
-async function estimateSigmaAnnual(minutes = 30) {
-  const limit = Math.min(Math.max(minutes, 5), 1000);
-  const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=${limit}`;
-  const rows = await fetch(url).then(r => r.json());
-  if (!Array.isArray(rows) || rows.length < 5) return 0.5; // fallback 50% سنوي
+function getHourWindowET(){
+  const nowET = DateTime.now().setZone('America/New_York');
+  const startET = nowET.startOf('hour');
+  const endET = startET.plus({hours:1});
+  return { startET, endET, nowET };
+}
 
-  const closes = rows.map(r => +r[4]);
+async function fetchPTB(){
+  const { startET } = getHourWindowET();
+  const startMsUTC = startET.toUTC().toMillis();
+  const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${startMsUTC}&limit=1`;
+  const r = await fetch(url);
+  const j = await r.json();
+  if(j && j.length) ptb = parseFloat(j[0][1]);
+}
+
+async function fetchCloses(mins){
+  const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=${mins}`;
+  const r = await fetch(url);
+  const j = await r.json();
+  return j.map(c=>+c[4]);
+}
+
+function stdDev(arr){
+  const mean = arr.reduce((a,b)=>a+b,0)/arr.length;
+  return Math.sqrt(arr.reduce((a,b)=>a+(b-mean)**2,0)/arr.length);
+}
+
+function annualizedVol(closes){
   const rets = [];
-  for (let i=1; i<closes.length; i++) rets.push( ln(closes[i]/closes[i-1]) );
-
-  // EWMA:
-  const lambda = 0.94; // مثل ريسك متريكس
-  let varEW = rets[0]**2;
-  for (let i=1; i<rets.length; i++) varEW = lambda*varEW + (1-lambda)*rets[i]**2;
-  const sigma1m = Math.sqrt(varEW);          // انحراف معياري لكل دقيقة (لوغ)
-  const minutesPerYear = 525600;             // 365*24*60
-  const sigmaAnnual = sigma1m * Math.sqrt(minutesPerYear);
-
-  return Math.min(Math.max(sigmaAnnual, 0.05), 2.0); // قص إلى [5%, 200%] لتجنب الجنون
+  for(let i=1;i<closes.length;i++){
+    rets.push(Math.log(closes[i]/closes[i-1]));
+  }
+  const sigmaPerMin = stdDev(rets);
+  return sigmaPerMin * Math.sqrt(525600);
 }
 
-// يجيب سعر افتتاح الساعة الحالية (ET) من شمعة 1h في Binance
-async function getPriceToBeatETOpen() {
-  // حوّل الآن إلى America/New_York ثم خذ بداية الساعة بالـ UTC millis
-  const now = new Date();
-  // تقريب بسيط: استعمل بداية الساعة UTC (لو تبغى ET بدقة، حول بفيوز America/New_York)
-  const startUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), 0, 0, 0)).getTime();
-  const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${startUTC}&limit=1`;
-  const rows = await fetch(url).then(r => r.json());
-  if (Array.isArray(rows) && rows.length) return +rows[0][1]; // open
-  return null;
+async function fetchHybridVol(){
+  const short = await fetchCloses(5);
+  const long = await fetchCloses(60);
+  const sigS = annualizedVol(short);
+  const sigL = annualizedVol(long);
+  sigmaAnn = 0.7*sigS + 0.3*sigL;
 }
 
-// يحسب الدقائق/الثواني المتبقية لنهاية الساعة (ET/UTC كما اخترت فوق)
-function getTimeLeftSeconds() {
-  const now = new Date();
-  const endUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours()+1, 0, 0, 0));
-  return Math.max(0, Math.floor((+endUTC - now) / 1000));
+function expectedMove(S, sigma, secsLeft){
+  const T = secsLeft / 31536000;
+  return S * sigma * Math.sqrt(T);
 }
 
-// احتمال الإغلاق فوق K (GBM)
-function probabilityUp(S0, K, sigmaAnnual, secondsLeft) {
-  if (!S0 || !K || !sigmaAnnual || secondsLeft <= 0) return 0.5;
-  const t = secondsLeft / (365*24*60*60);    // سنوات
-  const denom = sigmaAnnual * Math.sqrt(t);
-  if (denom <= 1e-9) return S0 >= K ? 1 : 0; // لو الوقت شبه صفر
-  const z = (ln(S0/K)) / denom;              // بدون drift
-  return phi(z);
+function cdf(x){
+  return (1 + Math.erf(x / Math.sqrt(2))) / 2;
 }
 
-// ---------- live loop ----------
-let latestPrice = null;
-let ptb = null;
-let sigmaAnn = 0.5;
+const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
+ws.onmessage = e => {
+  const data = JSON.parse(e.data);
+  price = parseFloat(data.p);
+  render();
+};
 
-async function initModel() {
-  // 1) PTB & Sigma
-  [ptb, sigmaAnn] = await Promise.all([
-    getPriceToBeatETOpen(),
-    estimateSigmaAnnual(30), // نافذة 30 دقيقة
-  ]);
-  // 2) WebSocket price
-  const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
-  ws.onmessage = ev => {
-    const msg = JSON.parse(ev.data);
-    latestPrice = +msg.p;
-  };
+function render(){
+  if(price!==null) document.getElementById('price').textContent = price.toFixed(2);
+  if(ptb!==null) document.getElementById('ptb').textContent = ptb.toFixed(2);
+
+  const { endET, nowET } = getHourWindowET();
+  const secsLeft = Math.max(0, Math.floor(endET.diff(nowET,'seconds').seconds));
+  const mins = String(Math.floor(secsLeft/60)).padStart(2,'0');
+  const secs = String(secsLeft%60).padStart(2,'0');
+  document.getElementById('timeLeft').textContent = `${mins}:${secs}`;
+
+  if(price!==null && ptb!==null){
+    const gap = price - ptb;
+    const gapEl = document.getElementById('gap');
+    gapEl.textContent = `${gap>=0?'+':''}${gap.toFixed(2)}`;
+    gapEl.className = gap>=0?'pos':'neg';
+
+    if(sigmaAnn!==null){
+      const em = expectedMove(price, sigmaAnn, secsLeft);
+      document.getElementById('expMove').textContent = em.toFixed(2);
+
+      const z = (ptb - price) / em;
+      let pUp = 1 - cdf(z);
+      pUp = Math.max(0.01, Math.min(0.99, pUp));
+      const pDown = 1 - pUp;
+
+      const upEl = document.getElementById('upPct');
+      const downEl = document.getElementById('downPct');
+      upEl.textContent = (pUp*100).toFixed(1)+'%';
+      downEl.textContent = (pDown*100).toFixed(1)+'%';
+      upEl.className = 'pos';
+      downEl.className = 'neg';
+    }
+  }
 }
 
-async function tickAndRender(render) {
-  if (!ptb) ptb = await getPriceToBeatETOpen();
-  if (!sigmaAnn) sigmaAnn = await estimateSigmaAnnual(30);
+setInterval(fetchHybridVol, 5000);
+setInterval(fetchPTB, 3600000);
 
-  const secsLeft = getTimeLeftSeconds();
-  const S0 = latestPrice;
-
-  // حساب الاحتمالات
-  const up = probabilityUp(S0, ptb, sigmaAnn, secsLeft);
-  const down = 1 - up;
-
-  render({
-    price: S0,
-    ptb,
-    timeLeftSec: secsLeft,
-    upPct: +(up*100).toFixed(1),
-    downPct: +(down*100).toFixed(1)
-  });
-}
-
-// مثال دمج مع واجهتك: مرر دالة render تحدث العناصر
-initModel().then(() => {
-  const render = (o) => {
-    // حدّث واجهتك هنا:
-    // document.querySelector('#price').textContent = o.price?.toFixed(2) ?? '—';
-    // document.querySelector('#ptb').textContent = o.ptb?.toFixed(2) ?? '—';
-    // document.querySelector('#time').textContent = formatMMSS(o.timeLeftSec);
-    // document.querySelector('#up').textContent = o.upPct + '%';
-    // document.querySelector('#down').textContent = o.downPct + '%';
-    console.log(o);
-  };
-  // تحديث سريع كل 1s
-  setInterval(() => tickAndRender(render), 1000);
-});
-
-// (اختياري) تنسيق وقت mm:ss
-function formatMMSS(s){
-  const m = Math.floor(s/60), ss = s%60;
-  return `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`;
-}
+fetchHybridVol();
+fetchPTB();
 </script>
+</body>
+</html>
