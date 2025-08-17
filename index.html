@@ -1,99 +1,165 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BTC Expected Move</title>
-  <style>
-    body {
-      margin: 0;
-      background: #111;
-      color: #eee;
-      font-family: Arial, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      height: 100vh;
-    }
-    header {
-      padding: 20px;
-      text-align: center;
-      background: #1a1a1a;
-      width: 100%;
-      font-size: 1.5em;
-      font-weight: bold;
-    }
-    .card {
-      margin: 20px;
-      padding: 20px;
-      background: #222;
-      border-radius: 12px;
-      width: 90%;
-      max-width: 420px;
-      text-align: left;
-      box-shadow: 0 0 12px rgba(0,0,0,0.6);
-    }
-    .row {
-      display: flex;
-      justify-content: space-between;
-      margin: 8px 0;
-      font-size: 1.1em;
-    }
-    .up { color: #0f0; font-weight: bold; }
-    .down { color: #f33; font-weight: bold; }
-    .strength { color: #0ff; font-weight: bold; }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>BTC Up/Down — Binance Prob</title>
+<style>
+  :root{--bg:#0b0f16;--card:#121826;--text:#e7ecf3;--muted:#97a3b6;--up:#16a34a;--down:#ef4444;--line:#1f2937;}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Arial}
+  .wrap{max-width:680px;margin:0 auto;padding:20px 14px 60px}
+  h1{font-size:22px;margin:8px 0 2px} .sub{color:var(--muted);font-size:12px;margin-bottom:16px}
+  .row{display:flex;flex-direction:column;gap:10px}
+  .item{background:var(--card);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line)}
+  .lbl{font-size:13px;color:var(--muted)} .val{font-size:18px;font-variant-numeric:tabular-nums}
+  .val.up{color:var(--up)} .val.down{color:var(--down)}
+  .foot{margin-top:14px;color:var(--muted);font-size:12px;text-align:center}
+</style>
 </head>
 <body>
-  <header>BTC Expected Move</header>
+<div class="wrap">
+  <h1>BTC Up/Down — Binance</h1>
+  <div class="sub">Live from Binance · Hour window (ET/UTC)</div>
 
-  <div class="card">
-    <div class="row"><span>Price:</span> <span id="price">-</span></div>
-    <div class="row"><span>Expected Move:</span> <span id="em">-</span></div>
-    <div class="row up"><span>Up:</span> <span id="up">-</span></div>
-    <div class="row down"><span>Down:</span> <span id="down">-</span></div>
-    <div class="row"><span>Strength:</span> <span id="strength">-</span>%</div>
-    <div class="row"><span>Time Left:</span> <span id="time">-</span></div>
+  <div class="row">
+    <div class="item"><div class="lbl">Price</div><div id="price" class="val">—</div></div>
+    <div class="item"><div class="lbl">Price to Beat</div><div id="ptb" class="val">—</div></div>
+    <div class="item"><div class="lbl">Time Left</div><div id="left" class="val">—</div></div>
+    <div class="item"><div class="lbl">Gap to Beat ($)</div><div id="gap" class="val">—</div></div>
+    <div class="item"><div class="lbl">Expected Move ($)</div><div id="em" class="val">—</div></div>
+    <div class="item"><div class="lbl">Up %</div><div id="up" class="val up">—</div></div>
+    <div class="item"><div class="lbl">Down %</div><div id="down" class="val down">—</div></div>
   </div>
 
+  <div id="stamp" class="foot">—</div>
+</div>
+
 <script>
-// جلب سعر BTC/USDT من Binance
-async function getPrice(){
-  let res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT");
-  let data = await res.json();
-  return parseFloat(data.price);
+// ======== helpers ========
+const phi = x => 0.5*(1+Math.erf(x/Math.SQRT2));          // CDF لنورمال
+const ln  = Math.log;
+const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
+const fmt2 = n => Number.isFinite(n)? n.toFixed(2) : '—';
+const fmt1p = n => Number.isFinite(n)? n.toFixed(1)+'%' : '—';
+const mmss = s => { const m=Math.floor(s/60), ss=s%60; return `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`; };
+
+// وقت متبقٍ حتى نهاية الساعة (UTC) بالثواني
+function secondsLeftInHourUTC() {
+  const now = new Date();
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours()+1, 0, 0, 0));
+  return Math.max(0, Math.floor((+end - now)/1000));
 }
 
-// Black-Scholes Expected Move (مبسط)
-function calculateEM(price, iv, secondsLeft){
-  let T = secondsLeft / (60*60*24*365); // تحويل إلى سنوات
-  return price * iv * Math.sqrt(T);
+// تقدير التذبذب السنوي من 1m log-returns (EWMA)
+async function estimateSigmaAnnual(minutes = 30) {
+  const limit = Math.min(Math.max(minutes, 5), 1000);
+  const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=${limit}`;
+  const rows = await fetch(url).then(r=>r.json());
+  if (!Array.isArray(rows) || rows.length < 5) return 0.5; // 50% fallback
+  const closes = rows.map(r => +r[4]);
+  const rets = [];
+  for (let i=1;i<closes.length;i++) rets.push( ln(closes[i]/closes[i-1]) );
+
+  const lambda = 0.94;
+  let v = rets[0]**2;
+  for (let i=1;i<rets.length;i++) v = lambda*v + (1-lambda)*rets[i]**2;
+  const sigma1m = Math.sqrt(v);               // لكل دقيقة (لوغ)
+  const minutesPerYear = 525600;              // 365*24*60
+  let sigmaAnnual = sigma1m * Math.sqrt(minutesPerYear);
+
+  // قصّ منطقي لتفادي الجنون
+  sigmaAnnual = clamp(sigmaAnnual, 0.05, 2.0); // [5%, 200%]
+  return sigmaAnnual;
 }
 
-async function update(){
-  let price = await getPrice();
-  let iv = 0.6;            // مؤقتًا 60% IV (يمكن ربطه مع Options API لاحقًا)
-  let secondsLeft = 20*60; // 20 دقيقة
-
-  let em = calculateEM(price, iv, secondsLeft);
-  let up = price + em;
-  let down = price - em;
-
-  // Strength: نسبة من 0 إلى 100
-  let strength = 50; // هنا تقدر تعدل المعادلة لو حاب توازن مع gap to beat
-
-  document.getElementById("price").innerText = price.toFixed(2);
-  document.getElementById("em").innerText = em.toFixed(2);
-  document.getElementById("up").innerText = up.toFixed(2);
-  document.getElementById("down").innerText = down.toFixed(2);
-  document.getElementById("strength").innerText = strength.toFixed(1);
-  document.getElementById("time").innerText = (secondsLeft/60).toFixed(1)+" min";
+// سعر افتتاح الساعة الحالية (UTC) من شمعة 1h
+async function getPTB_OpenUTC() {
+  const now = new Date();
+  const startUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), 0, 0, 0)).getTime();
+  const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${startUTC}&limit=1`;
+  const rows = await fetch(url).then(r=>r.json());
+  if (Array.isArray(rows) && rows.length) return +rows[0][1]; // open
+  return null;
 }
 
-// تحديث أولي وكل 5 ثواني
-update();
-setInterval(update, 5000);
+// احتمالية الإغلاق فوق K (GBM بدون drift)
+function probUp(S0, K, sigmaAnnual, secsLeft){
+  if (!S0 || !K || !sigmaAnnual) return 0.5;
+  const t = secsLeft / (365*24*60*60);
+  const denom = sigmaAnnual * Math.sqrt(Math.max(t, 1e-12));
+  if (denom <= 1e-9) return S0 >= K ? 1 : 0;
+  const z = (ln(S0/K)) / denom;
+  return clamp(phi(z), 0, 1);
+}
+
+// Expected Move بالدولار = S0 * sigma * sqrt(t)
+function expectedMoveUSD(S0, sigmaAnnual, secsLeft){
+  if (!S0 || !sigmaAnnual) return 0;
+  const t = secsLeft / (365*24*60*60);
+  return Math.max(0, S0 * sigmaAnnual * Math.sqrt(Math.max(t, 0)));
+}
+
+// ======== state & DOM ========
+const el = id => document.getElementById(id);
+const $price = el('price'), $ptb = el('ptb'), $left = el('left'), $gap = el('gap'), $em = el('em'), $up = el('up'), $down = el('down'), $stamp = el('stamp');
+
+let latestPrice = null, ptb = null, sigmaAnn = null;
+
+// WebSocket سعر لحظي
+function startWS(){
+  const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
+  ws.onmessage = ev => { const m = JSON.parse(ev.data); latestPrice = +m.p; };
+  ws.onclose = () => setTimeout(startWS, 1500);
+}
+
+// تهيئة
+(async function init(){
+  startWS();
+  [ptb, sigmaAnn] = await Promise.all([
+    getPTB_OpenUTC(),
+    estimateSigmaAnnual(30)
+  ]);
+  loop();
+})();
+
+// حلقة تحديث واجهة كل 1s
+async function loop(){
+  try{
+    // لو الساعة تبدلت أو PTB فقد، أعِد قراءته
+    if (secondsLeftInHourUTC() === 0 || ptb == null) ptb = await getPTB_OpenUTC();
+    if (sigmaAnn == null) sigmaAnn = await estimateSigmaAnnual(30);
+
+    const secs = secondsLeftInHourUTC();
+    const S0   = latestPrice;
+    const em$  = expectedMoveUSD(S0, sigmaAnn, secs);
+    const upP  = probUp(S0, ptb, sigmaAnn, secs);
+    const downP= 1 - upP;
+    const gap$ = (S0 && ptb) ? (S0 - ptb) : null;
+
+    // DOM
+    $price.textContent = fmt2(S0);
+    $ptb.textContent   = fmt2(ptb);
+    $left.textContent  = mmss(secs);
+
+    if (gap$!=null){
+      const sign = gap$>=0?'+':'−';
+      const abs  = Math.abs(gap$);
+      $gap.textContent = `${sign}${fmt2(abs)}`;
+      $gap.className = 'val ' + (gap$>=0?'up':'down');
+    } else { $gap.textContent='—'; $gap.className='val'; }
+
+    $em.textContent   = fmt2(em$);
+    $up.textContent   = fmt1p(upP*100);
+    $down.textContent = fmt1p(downP*100);
+
+    const t = new Date().toISOString().slice(0,19).replace('T',' ');
+    $stamp.textContent = `Last update: ${t} UTC · WebSocket: Binance · Vol window: 30m`;
+  }catch(e){
+    console.error(e);
+  }finally{
+    setTimeout(loop, 1000);
+  }
+}
 </script>
 </body>
 </html>
