@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>BTC Up/Down — Hybrid</title>
+  <title>BTC Up/Down — Hybrid (IV ATM Auto)</title>
   <style>
     body { background:#0b0b0d; color:#e9eaee; font:400 16px/1.5 ui-sans-serif,system-ui; }
     .wrap{max-width:720px; margin:32px auto; padding:0 16px}
@@ -38,12 +38,9 @@
 const SYMBOL = 'BTCUSDT';
 const WS_SPOT = `wss://stream.binance.com:9443/ws/${SYMBOL.toLowerCase()}@trade`;
 
-// ⚠️ غيّر الرمز لعقد ATM صحيح (هنا مثال عقد ينتهي Aug 17, 2025)
-// يمكنك تغييره حسب تاريخ اليوم أو أقرب ATM
-const WS_OPT = "wss://nbstream.binance.com/eoptions/stream?streams=BTC-250817-60000-C@markPrice";
-
 let wsSpot, wsOpt;
 let price=null, priceToBeat=null, impliedVol=null;
+let optSymbol=null;
 
 function fmt(n,d=2){return Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});}
 function setText(id,txt,cls){let el=document.getElementById(id); if(!el)return;
@@ -64,12 +61,12 @@ function erf(x){const s=Math.sign(x);x=Math.abs(x);
   const t=1/(1+p*x);const y=1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);return s*y;}
 const cdf=x=>0.5*(1+erf(x/Math.SQRT2));
 
-// تحميل Price to Beat (سعر الافتتاح بداية الساعة)
 async function loadPriceToBeat(){
   try{
     const start=startOfETHourUTC();const end=start+60000;
     const res=await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent("https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&startTime="+start+"&endTime="+end+"&limit=1")}`);
-    const arr=await res.json(); if(arr.length){priceToBeat=parseFloat(arr[0][1]);setText('ptb',fmt(priceToBeat));}
+    const arr=await res.json(); 
+    if(arr.length){priceToBeat=parseFloat(arr[0][1]);setText('ptb',fmt(priceToBeat));}
   }catch(e){console.error("PTB error",e);}
 }
 
@@ -80,21 +77,45 @@ function connectSpotWS(){
   wsSpot.onclose=()=>setTimeout(connectSpotWS,1500);
 }
 
-function connectOptionsWS(){
-  wsOpt=new WebSocket(WS_OPT);
-  wsOpt.onmessage=(ev)=>{
-    try{
-      const d=JSON.parse(ev.data);
-      if(d && d.data && d.data.markIv){
-        impliedVol=parseFloat(d.data.markIv)/100; // يحول إلى نسبة
-      }
-    }catch(e){console.error("Opt WS error",e);}
-  };
-  wsOpt.onclose=()=>setTimeout(connectOptionsWS,5000);
+async function connectATMOptionWS(){
+  try{
+    const res = await fetch("https://api.allorigins.win/raw?url="+encodeURIComponent("https://eapi.binance.com/eapi/v1/exchangeInfo"));
+    const data = await res.json();
+
+    if(!data.symbols) return;
+    // فلترة على BTC فقط
+    let syms = data.symbols.filter(s=>s.symbol.startsWith("BTC"));
+
+    // اختيار أقرب Expiry
+    syms.sort((a,b)=> new Date(a.expiryDate)-new Date(b.expiryDate));
+    const nearestExpiry = syms[0].expiryDate;
+    syms = syms.filter(s=>s.expiryDate===nearestExpiry && s.optionType==="CALL");
+
+    // أقرب Strike للسعر الحالي
+    if(price==null){ setTimeout(connectATMOptionWS,2000); return; }
+    syms.sort((a,b)=>Math.abs(price-a.strikePrice)-Math.abs(price-b.strikePrice));
+    optSymbol = syms[0].symbol;
+
+    // WebSocket للـ markPrice
+    const url = `wss://nbstream.binance.com/eoptions/stream?streams=${optSymbol}@markPrice`;
+    wsOpt=new WebSocket(url);
+    wsOpt.onmessage=(ev)=>{
+      try{
+        const d=JSON.parse(ev.data);
+        if(d && d.data && d.data.markIv){
+          impliedVol=parseFloat(d.data.markIv)/100;
+        }
+      }catch(e){console.error("Opt WS error",e);}
+    };
+    wsOpt.onclose=()=>setTimeout(connectATMOptionWS,5000);
+
+    console.log("Connected to ATM Option:",optSymbol);
+  }catch(e){console.error("ATM option error",e);}
 }
 
 function updateDerived(){
   if(price==null||priceToBeat==null||impliedVol==null)return;
+
   const gap=price-priceToBeat;
   setText('gap',(gap>=0?'+':'')+fmt(gap),gap>=0?'pos':'neg');
 
@@ -102,7 +123,7 @@ function updateDerived(){
   const secs=secondsLeftInETHour();
   const T=secs/(365*24*3600);
 
-  // Black–Scholes Expected Move
+  // Black–Scholes Expected Move باستخدام IV
   const bsMove=price*impliedVol*Math.sqrt(T);
   setText('em',fmt(bsMove,2));
 
@@ -124,12 +145,12 @@ function tick(){
 }
 
 function setFooter(){document.getElementById('footer').textContent=
-  "Last update: "+new Date().toISOString().replace("T"," ").replace("Z"," UTC")+" · WebSocket: Binance (Spot+Options) · TZ: America/New_York (ET)";}
+  "Last update: "+new Date().toISOString().replace("T"," ").replace("Z"," UTC")+" · WebSocket: Spot+ATM IV · TZ: America/New_York (ET)";}
 
 async function init(){
   connectSpotWS();
-  connectOptionsWS();
   await loadPriceToBeat();
+  await connectATMOptionWS();
   setInterval(tick,1000);
 }
 init();
