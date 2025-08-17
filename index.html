@@ -96,7 +96,7 @@ async function fetchRealizedVol1m(n=60){
   return { sigma1m, lastClose: closes.at(-1) };
 }
 
-// ======= احتمال قياسي (CDF) =======
+// ======= CDF طبيعي معياري =======
 function phiCDF(z){
   const t = 1/(1+0.2316419*Math.abs(z));
   const d = 0.3989422804014327*Math.exp(-0.5*z*z);
@@ -104,28 +104,15 @@ function phiCDF(z){
   return z>=0 ? 1-p : p;
 }
 
-// ======= الهجين: GBM + tanh(strength) =======
-function hybridUpDown(price, ptb, expectedMove, secsLeft){
+// ======= احتمال GBM خام (مثل Polymarket تقريبًا) =======
+function gbmUpDown(price, ptb, expectedMove){
   const EPS=1e-9;
   const S=Math.max(EPS, price), K=Math.max(EPS, ptb), EM=Math.max(EPS, expectedMove);
-  // GBM: sigma*sqrt(t) = EM / S  => z = ln(S/K)/(EM/S)
-  const z_gbm = Math.log(S/K) / Math.max(EM/S, EPS);
-  const p_gbm = phiCDF(z_gbm);
-
-  // قوة الحركة: strength = gap/EM  → tanh(beta*strength)
-  const gap = S-K;
-  const strength = gap/EM;
-  const beta = 0.40;
-  const p_strength = 0.5 + 0.5*Math.tanh(beta*strength);
-
-  // وزن ديناميكي (أعلى قرب النهاية)
-  const horizon = Math.max(0, Math.min(1, secsLeft/3600)); // 1 أول الساعة → 0 نهايتها
-  const w_strength = 0.70 + 0.20*(1-horizon); // 0.70 → 0.90
-  const w_gbm = 1 - w_strength;
-
-  let pUp = w_gbm*p_gbm + w_strength*p_strength;
-  pUp = Math.max(0, Math.min(1, pUp));
-  return { pUp, pDown: 1-pUp, details:{p_gbm,p_strength, z_gbm, strength, w_strength, w_gbm} };
+  // sigma*sqrt(t) ≈ EM/S  → z = ln(S/K)/(EM/S)
+  const z = Math.log(S/K) / Math.max(EM/S, EPS);
+  const zClamped = Math.max(-6, Math.min(6, z)); // منع انفجار الأرقام
+  const pUp = phiCDF(zClamped);
+  return { pUp, pDown: 1-pUp, z };
 }
 
 // ======= الحالة و التحديث =======
@@ -144,8 +131,7 @@ let state = {
 function computeExpectedMoveUSD(S, secsLeft, sigma1m){
   const sigma1s = sigma1m / Math.sqrt(60);         // stddev لكل ثانية (لوغ)
   const em = S * sigma1s * Math.sqrt(Math.max(secsLeft,1));
-  // حد أدنى صغير لتجنب صفر:
-  return Math.max(em, 0.5);
+  return Math.max(em, 0.5); // حد أدنى صغير فقط
 }
 
 // يعرض الوقت mm:ss
@@ -158,7 +144,7 @@ function fmtTime(secs){
 function paintGap(valEl, gap){
   valEl.classList.remove('pos','neg');
   if (gap>0){ valEl.classList.add('pos'); valEl.textContent = `+${fmt2(gap)}`; }
-  else if (gap<0){ valEl.classList.add('neg'); valEl.textContent = `${fmt2(gap)}`; } // fmt2 يحفظ السالب
+  else if (gap<0){ valEl.classList.add('neg'); valEl.textContent = `${fmt2(gap)}`; }
   else { valEl.textContent = fmt2(0); }
 }
 
@@ -180,8 +166,8 @@ function updateUI(){
   $str.classList.remove('pos','neg');
   $str.classList.add(gap>=0?'pos':'neg');
 
-  // Hybrid probs
-  const {pUp, pDown} = hybridUpDown(state.price, state.ptb, EM, state.secsLeft);
+  // GBM probabilities (مثل Polymarket تقريبًا)
+  const {pUp, pDown} = gbmUpDown(state.price, state.ptb, EM);
   $up.textContent   = pct1(pUp*100);
   $down.textContent = pct1(pDown*100);
   $up.classList.toggle('pos', pUp>=0.5);  $up.classList.toggle('neg', pUp<0.5);
