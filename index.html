@@ -1,260 +1,118 @@
 <!doctype html>
-<html lang="en" dir="ltr">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>BTC Up/Down — Hybrid</title>
   <style>
-    :root{
-      --bg:#0b0b0d;
-      --panel:#141418;
-      --muted:#9aa0a6;
-      --text:#e9eaee;
-      --green:#17c964;
-      --red:#ff3b3b;
-      --amber:#f5a524;
-      --card-radius:18px;
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0; background:var(--bg); color:var(--text);
-      font:400 16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
-      -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
-    }
-    .wrap{max-width:720px; margin:32px auto 48px; padding:0 16px}
-    .title{font-size:34px; font-weight:800; letter-spacing:.2px; margin-bottom:6px}
-    .subtitle{color:var(--muted); font-size:14px; margin-bottom:20px}
-    .grid{display:flex; flex-direction:column; gap:14px}
-    .card{
-      background:var(--panel); border-radius:var(--card-radius);
-      padding:18px 20px; display:flex; align-items:center; justify-content:space-between;
-      box-shadow:0 0 0 1px rgba(255,255,255,.03), 0 8px 24px rgba(0,0,0,.35);
-    }
-    .label{color:var(--muted); text-transform:uppercase; letter-spacing:.12em; font-size:12px}
-    .value{font-variant-numeric:tabular-nums; font-weight:800; font-size:22px}
-    .value.small{font-size:20px; font-weight:700}
-    .pos{color:var(--green)}
-    .neg{color:var(--red)}
-    .foot{margin-top:18px; color:var(--muted); font-size:12px}
-    .dot{display:inline-block; width:6px; height:6px; border-radius:50%; background:#666; margin:0 6px; vertical-align:middle}
-    .pill{display:inline-block; padding:.2rem .6rem; border-radius:999px; background:#1c1c22; color:#c9cbd1; font-size:12px}
+    body { background:#0b0b0d; color:#e9eaee; font:400 16px/1.5 ui-sans-serif,system-ui; }
+    .wrap{max-width:720px; margin:32px auto; padding:0 16px}
+    .title{font-size:28px;font-weight:800;margin-bottom:6px}
+    .subtitle{color:#9aa0a6;font-size:14px;margin-bottom:20px}
+    .card{background:#141418;border-radius:14px;padding:16px 20px;margin-bottom:12px;
+          display:flex;justify-content:space-between;align-items:center}
+    .label{color:#9aa0a6;font-size:12px;text-transform:uppercase}
+    .value{font-variant-numeric:tabular-nums;font-weight:700;font-size:20px}
+    .pos{color:#17c964} .neg{color:#ff3b3b}
+    .foot{margin-top:18px;color:#9aa0a6;font-size:12px}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="title">BTC Up/Down — Hybrid</div>
-    <div class="subtitle">
-      Live from Binance <span class="dot"></span>
-      <span class="pill">Hour window (ET)</span>
-    </div>
+<div class="wrap">
+  <div class="title">BTC Up/Down — Hybrid</div>
+  <div class="subtitle">Live from Binance · Hour window (ET)</div>
 
-    <div class="grid">
-      <div class="card"><div class="label">Price</div><div id="price" class="value">—</div></div>
-      <div class="card"><div class="label">Price to Beat</div><div id="ptb" class="value">—</div></div>
-      <div class="card"><div class="label">Time Left</div><div id="left" class="value">—</div></div>
-      <div class="card"><div class="label">Gap to Beat ($)</div><div id="gap" class="value neg">—</div></div>
-      <div class="card"><div class="label">Expected Move ($)</div><div id="em" class="value small">—</div></div>
-      <div class="card"><div class="label">Strength (%)</div><div id="strength" class="value small">—</div></div>
-      <div class="card"><div class="label">Up %</div><div id="up" class="value pos">—</div></div>
-      <div class="card"><div class="label">Down %</div><div id="down" class="value neg">—</div></div>
-    </div>
+  <div class="card"><div class="label">Price</div><div id="price" class="value">—</div></div>
+  <div class="card"><div class="label">Price to Beat</div><div id="ptb" class="value">—</div></div>
+  <div class="card"><div class="label">Time Left</div><div id="left" class="value">—</div></div>
+  <div class="card"><div class="label">Gap to Beat ($)</div><div id="gap" class="value">—</div></div>
+  <div class="card"><div class="label">Expected Move ($)</div><div id="em" class="value">—</div></div>
+  <div class="card"><div class="label">Strength (%)</div><div id="strength" class="value">—</div></div>
+  <div class="card"><div class="label">Up %</div><div id="up" class="value">—</div></div>
+  <div class="card"><div class="label">Down %</div><div id="down" class="value">—</div></div>
 
-    <div id="footer" class="foot">Last update: —</div>
-  </div>
+  <div id="footer" class="foot">Last update: —</div>
+</div>
 
-  <script>
-    // ====== Config ======
-    const SYMBOL = 'BTCUSDT';
-    const WS_URL = `wss://stream.binance.com:9443/ws/${SYMBOL.toLowerCase()}@trade`;
-    const API = 'https://api.binance.com/api/v3';
-    const ET_TZ = 'America/New_York';
+<script>
+const SYMBOL = 'BTCUSDT';
+const WS_URL = `wss://stream.binance.com:9443/ws/${SYMBOL.toLowerCase()}@trade`;
+// Proxy للـ API إذا في مشاكل CORS
+const API = 'https://cors-proxy.fringe.zone/https://api.binance.com/api/v3';
 
-    // ====== State ======
-    let ws;
-    let price = null;          // current price
-    let priceToBeat = null;    // hour open (ET)
-    let expectedMove = null;   // $ one-sigma for 1 hour (realized)
-    let lastUpdate = null;
+let ws, price=null, priceToBeat=null, expectedMove=null;
 
-    // ====== Utils ======
-    const fmt = (n, d=2) => Number(n).toLocaleString(undefined,{maximumFractionDigits:d, minimumFractionDigits:d});
-    const clamp = (x,min,max)=>Math.max(min,Math.min(max,x));
+function fmt(n,d=2){return Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});}
+function setText(id,txt,cls){let el=document.getElementById(id); if(!el)return;
+  el.classList.remove('pos','neg'); if(cls)el.classList.add(cls); el.textContent=txt;}
+function getParts(date,tz){return new Intl.DateTimeFormat('en-US',{timeZone:tz,hour12:false,
+  year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(date);}
+function tzOffsetMs(tz){const now=new Date(); const pET=getParts(now,tz), pUTC=getParts(now,'UTC');
+  const asET=Date.UTC(pET[4].value,pET[0].value-1,pET[2].value,pET[6].value,pET[8].value,pET[10].value);
+  const asUTC=Date.UTC(pUTC[4].value,pUTC[0].value-1,pUTC[2].value,pUTC[6].value,pUTC[8].value,pUTC[10].value);
+  return asUTC-asET;}
+function startOfETHourUTC(){const p=getParts(new Date(),'America/New_York');const off=tzOffsetMs('America/New_York');
+  return Date.UTC(p[4].value,p[0].value-1,p[2].value,p[6].value,0,0)+off;}
+function secondsLeftInETHour(){const p=getParts(new Date(),'America/New_York');
+  return (59-p[8].value)*60+(60-p[10].value);}
+function erf(x){const s=Math.sign(x);x=Math.abs(x);
+  const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+  const t=1/(1+p*x);const y=1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);return s*y;}
+const cdf=x=>0.5*(1+erf(x/Math.SQRT2));
 
-    function getParts(date, tz){
-      const fmt = new Intl.DateTimeFormat('en-US',{
-        timeZone: tz, hour12:false,
-        year:'numeric', month:'2-digit', day:'2-digit',
-        hour:'2-digit', minute:'2-digit', second:'2-digit'
-      }).formatToParts(date);
-      const g = t => +fmt.find(p=>p.type===t).value;
-      return {year:g('year'), month:g('month'), day:g('day'), hour:g('hour'), minute:g('minute'), second:g('second')};
-    }
+async function loadPriceToBeat(){
+  try{
+    const start=startOfETHourUTC();const end=start+60000;
+    const res=await fetch(`${API}/klines?symbol=${SYMBOL}&interval=1m&startTime=${start}&endTime=${end}&limit=1`);
+    const arr=await res.json(); if(arr.length){priceToBeat=parseFloat(arr[0][1]);setText('ptb',fmt(priceToBeat));}
+  }catch(e){console.error("PTB error",e);}
+}
 
-    // ET offset from UTC in ms (robust w/ DST)
-    function getTzOffsetMs(tz){
-      const now = new Date();
-      const pET = getParts(now, tz);
-      const pUTC = getParts(now, 'UTC');
-      const asET = Date.UTC(pET.year, pET.month-1, pET.day, pET.hour, pET.minute, pET.second);
-      const asUTC = Date.UTC(pUTC.year, pUTC.month-1, pUTC.day, pUTC.hour, pUTC.minute, pUTC.second);
-      return asUTC - asET; // add to ET-wall-clock to get real UTC epoch
-    }
+async function loadExpectedMove(){
+  try{
+    const res=await fetch(`${API}/klines?symbol=${SYMBOL}&interval=1m&limit=120`);
+    const kl=await res.json(); if(!Array.isArray(kl)||kl.length<61)return;
+    const closes=kl.map(k=>+k[4]); let rets=[];
+    for(let i=1;i<closes.length;i++){rets.push(Math.log(closes[i]/closes[i-1]));}
+    const mean=rets.reduce((a,b)=>a+b,0)/rets.length;
+    const variance=rets.reduce((a,b)=>a+(b-mean)**2,0)/(rets.length-1);
+    const sigma1m=Math.sqrt(variance); const sigma1h=sigma1m*Math.sqrt(60);
+    if(price){expectedMove=price*sigma1h; setText('em',fmt(expectedMove));}
+  }catch(e){console.error("EM error",e);}
+}
 
-    // Start of current ET hour in UTC ms
-    function startOfETHourUTC(){
-      const now = new Date();
-      const p = getParts(now, ET_TZ);
-      const offset = getTzOffsetMs(ET_TZ);
-      return Date.UTC(p.year, p.month-1, p.day, p.hour, 0, 0) + offset;
-    }
+function connectWS(){
+  if(ws) try{ws.close();}catch{}; ws=new WebSocket(WS_URL);
+  ws.onmessage=(ev)=>{const d=JSON.parse(ev.data); price=parseFloat(d.p);
+    setText('price',fmt(price)); updateDerived(); setFooter();};
+  ws.onclose=()=>setTimeout(connectWS,1500);
+}
 
-    // Seconds left to next ET hour
-    function secondsLeftInETHour(){
-      const p = getParts(new Date(), ET_TZ);
-      return (59 - p.minute) * 60 + (60 - p.second);
-    }
+function updateDerived(){
+  if(price==null||priceToBeat==null)return;
+  const gap=price-priceToBeat; setText('gap',(gap>=0?'+':'')+fmt(gap),gap>=0?'pos':'neg');
+  if(expectedMove!=null&&expectedMove>0){
+    const strength=Math.min(Math.abs(gap)/expectedMove*100,999); setText('strength',fmt(strength,1));
+    const secs=secondsLeftInETHour(); const frac=Math.max(0,Math.min(1,secs/3600));
+    const sigmaRem=expectedMove*Math.sqrt(frac); const z=(-gap)/(sigmaRem+1e-9);
+    const up=cdf(z)*100; const down=100-up;
+    setText('up',fmt(up,1),'pos'); setText('down',fmt(down,1),'neg');
+  }
+}
 
-    // Normal CDF via erf approximation
-    function erf(x){
-      const s = Math.sign(x); x = Math.abs(x);
-      const a1=0.254829592, a2=-0.284496736, a3=1.421413741, a4=-1.453152027, a5=1.061405429, p=0.3275911;
-      const t = 1/(1+p*x);
-      const y = 1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);
-      return s*y;
-    }
-    const cdf = x => 0.5*(1+erf(x/Math.SQRT2));
+function tick(){const s=secondsLeftInETHour();setText('left',
+  String(Math.floor(s/60)).padStart(2,'0')+":"+String(s%60).padStart(2,'0'));
+  updateDerived();}
 
-    function setText(id, text, cls){
-      const el = document.getElementById(id);
-      if(!el) return;
-      if(cls){ el.classList.remove('pos','neg'); el.classList.add(cls); }
-      el.textContent = text;
-    }
+function setFooter(){document.getElementById('footer').textContent=
+  "Last update: "+new Date().toISOString().replace("T"," ").replace("Z"," UTC")+" · WebSocket: Binance · TZ: America/New_York (ET)";}
 
-    function setFooter(){
-      const now = new Date();
-      const utc = new Intl.DateTimeFormat('en-GB',{timeZone:'UTC', hour12:false,
-        year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'
-      }).format(now).replace(',', '');
-      document.getElementById('footer').innerHTML =
-        `Last update: ${utc} UTC <span class="dot"></span> WebSocket: Binance <span class="dot"></span> TZ: ${ET_TZ} (ET)`;
-    }
-
-    // ====== Data fetchers ======
-
-    // 1) Price to Beat = open price at start of the current ET hour
-    async function loadPriceToBeat(){
-      try{
-        const start = startOfETHourUTC();
-        const end = start + 60_000; // first 1m candle in the hour
-        const url = `${API}/klines?symbol=${SYMBOL}&interval=1m&startTime=${start}&endTime=${end}&limit=1`;
-        const res = await fetch(url);
-        const arr = await res.json();
-        if(Array.isArray(arr) && arr.length){
-          priceToBeat = parseFloat(arr[0][1]); // open
-          setText('ptb', fmt(priceToBeat, 2));
-        }
-      }catch(e){ console.error('PriceToBeat error', e); }
-    }
-
-    // 2) Expected Move ($) from realized vol of last 60 1m candles
-    async function loadExpectedMove(){
-      try{
-        const url = `${API}/klines?symbol=${SYMBOL}&interval=1m&limit=120`;
-        const res = await fetch(url);
-        const kl = await res.json();
-        if(!Array.isArray(kl) || kl.length < 61) return;
-
-        // log-returns at 1m
-        const closes = kl.map(k => +k[4]);
-        let rets = [];
-        for(let i=1;i<closes.length;i++){
-          rets.push(Math.log(closes[i]/closes[i-1]));
-        }
-        // std of 1m returns
-        const mean = rets.reduce((a,b)=>a+b,0)/rets.length;
-        const variance = rets.reduce((a,b)=>a+(b-mean)**2,0)/(rets.length-1);
-        const sigma1m = Math.sqrt(variance);
-        const sigma1h = sigma1m * Math.sqrt(60);
-        if(price){
-          expectedMove = price * sigma1h;
-          setText('em', fmt(expectedMove, 2));
-        }
-      }catch(e){ console.error('ExpectedMove error', e); }
-    }
-
-    // 3) WebSocket live price
-    function connectWS(){
-      if(ws) try{ ws.close(); }catch{}
-      ws = new WebSocket(WS_URL);
-      ws.onmessage = (ev)=>{
-        const d = JSON.parse(ev.data);
-        price = parseFloat(d.p);
-        lastUpdate = Date.now();
-        setText('price', fmt(price, 2));
-        updateDerived();
-        setFooter();
-      };
-      ws.onclose = ()=>{ setTimeout(connectWS, 1500); };
-      ws.onerror = ()=>{ try{ ws.close(); }catch{} };
-    }
-
-    // ====== Derived metrics ======
-    function updateDerived(){
-      if(priceToBeat==null || price==null) return;
-
-      const gap = price - priceToBeat;
-      setText('gap', (gap>=0?'+':'') + fmt(gap, 2), gap>=0 ? 'pos' : 'neg');
-
-      // Strength
-      if(expectedMove!=null && expectedMove>0){
-        const strength = clamp(Math.abs(gap) / expectedMove * 100, 0, 999);
-        setText('strength', fmt(strength, 1));
-      }
-
-      // Probabilities (residual of the hour)
-      if(expectedMove!=null && expectedMove>0){
-        const secsLeft = secondsLeftInETHour();
-        const frac = clamp(secsLeft/3600, 0, 1);
-        const sigmaHour = expectedMove;               // $ one-sigma full hour
-        const sigmaRem = sigmaHour * Math.sqrt(frac); // $ one-sigma remaining
-        const z = (-gap) / (sigmaRem + 1e-9);         // chance to finish above PTB
-        const upP = cdf(z) * 100;
-        const downP = 100 - upP;
-
-        setText('up', fmt(upP, 1), 'pos');
-        setText('down', fmt(downP, 1), 'neg');
-      }
-    }
-
-    // ====== Timers ======
-    function tick(){
-      // Time left
-      const secs = secondsLeftInETHour();
-      const mm = String(Math.floor(secs/60)).padStart(2,'0');
-      const ss = String(secs%60).padStart(2,'0');
-      setText('left', `${mm}:${ss}`);
-
-      // top of hour rollover
-      if(mm==='59' && ss==='59'){ /* nothing */ }
-      if(mm==='00' && ss==='05'){ // refresh PTB shortly after hour flips
-        loadPriceToBeat();
-        loadExpectedMove();
-      }
-
-      // keep derived numbers fresh
-      updateDerived();
-    }
-
-    // ====== Init ======
-    async function init(){
-      connectWS();
-      await loadPriceToBeat();
-      await loadExpectedMove();
-      setInterval(tick, 1000);
-      setFooter();
-    }
-    init();
-  </script>
+async function init(){
+  connectWS(); await loadPriceToBeat(); await loadExpectedMove();
+  setInterval(loadExpectedMove,60000); // تحديث كل دقيقة
+  setInterval(tick,1000);
+}
+init();
+</script>
 </body>
 </html>
