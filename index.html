@@ -1,165 +1,256 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>BTC Up/Down — Binance Prob</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>BTC Up/Down — Hybrid</title>
+<link rel="manifest" href="manifest.json"/>
+<meta name="theme-color" content="#0b0f1a"/>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
 <style>
-  :root{--bg:#0b0f16;--card:#121826;--text:#e7ecf3;--muted:#97a3b6;--up:#16a34a;--down:#ef4444;--line:#1f2937;}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Arial}
-  .wrap{max-width:680px;margin:0 auto;padding:20px 14px 60px}
-  h1{font-size:22px;margin:8px 0 2px} .sub{color:var(--muted);font-size:12px;margin-bottom:16px}
-  .row{display:flex;flex-direction:column;gap:10px}
-  .item{background:var(--card);border-radius:14px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line)}
-  .lbl{font-size:13px;color:var(--muted)} .val{font-size:18px;font-variant-numeric:tabular-nums}
-  .val.up{color:var(--up)} .val.down{color:var(--down)}
-  .foot{margin-top:14px;color:var(--muted);font-size:12px;text-align:center}
+  :root{
+    --bg:#0b0f1a; --card:#121826; --ink:#e7eaf0; --muted:#97a1b3;
+    --pos:#22c55e; --neg:#ef4444; --accent:#3b82f6;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:500 16px ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;
+  }
+  .wrap{max-width:800px; margin:0 auto; padding:20px 16px 40px; min-height:100%;}
+  h1{margin:8px 0 6px; font-size:28px; letter-spacing:.4px}
+  .sub{color:var(--muted); font-size:13px; margin-bottom:14px}
+  .grid{display:grid; gap:12px}
+  @media(min-width:520px){ .grid{grid-template-columns:1fr 1fr} }
+  .row{
+    background:var(--card); border-radius:14px; padding:14px 16px;
+    display:flex; align-items:center; justify-content:space-between; min-height:64px;
+  }
+  .lbl{color:var(--muted); font-size:13px; letter-spacing:.3px}
+  .val{font-weight:700; font-size:18px}
+  .mono{font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1}
+  .val.pos{color:var(--pos)} .val.neg{color:var(--neg)}
+  .foot{margin-top:16px; color:var(--muted); font-size:12px}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>BTC Up/Down — Binance</h1>
-  <div class="sub">Live from Binance · Hour window (ET/UTC)</div>
+  <div class="wrap">
+    <h1>BTC Up/Down — Hybrid</h1>
+    <div class="sub">Live from Binance · Hour window (ET)</div>
 
-  <div class="row">
-    <div class="item"><div class="lbl">Price</div><div id="price" class="val">—</div></div>
-    <div class="item"><div class="lbl">Price to Beat</div><div id="ptb" class="val">—</div></div>
-    <div class="item"><div class="lbl">Time Left</div><div id="left" class="val">—</div></div>
-    <div class="item"><div class="lbl">Gap to Beat ($)</div><div id="gap" class="val">—</div></div>
-    <div class="item"><div class="lbl">Expected Move ($)</div><div id="em" class="val">—</div></div>
-    <div class="item"><div class="lbl">Up %</div><div id="up" class="val up">—</div></div>
-    <div class="item"><div class="lbl">Down %</div><div id="down" class="val down">—</div></div>
+    <div class="grid">
+      <div class="row"><div class="lbl">PRICE</div>            <div id="priceVal"    class="val mono">—</div></div>
+      <div class="row"><div class="lbl">PRICE TO BEAT</div>     <div id="ptbVal"      class="val mono">—</div></div>
+      <div class="row"><div class="lbl">TIME LEFT</div>         <div id="timeLeftVal" class="val mono">—</div></div>
+      <div class="row"><div class="lbl">GAP TO BEAT ($)</div>   <div id="gapVal"      class="val mono">—</div></div>
+      <div class="row"><div class="lbl">EXPECTED MOVE ($)</div> <div id="emVal"       class="val mono">—</div></div>
+      <div class="row"><div class="lbl">STRENGTH (%)</div>      <div id="strengthVal" class="val mono">—</div></div>
+      <div class="row"><div class="lbl">UP %</div>              <div id="upVal"       class="val mono">—</div></div>
+      <div class="row"><div class="lbl">DOWN %</div>            <div id="downVal"     class="val mono">—</div></div>
+    </div>
+
+    <div id="stamp" class="foot">—</div>
+    <div class="foot">WebSocket: Binance · REST: 1m/1h (klines) · TZ: America/New_York (ET)</div>
   </div>
 
-  <div id="stamp" class="foot">—</div>
-</div>
-
 <script>
-// ======== helpers ========
-const phi = x => 0.5*(1+Math.erf(x/Math.SQRT2));          // CDF لنورمال
-const ln  = Math.log;
-const clamp = (x,a,b)=>Math.max(a,Math.min(b,x));
-const fmt2 = n => Number.isFinite(n)? n.toFixed(2) : '—';
-const fmt1p = n => Number.isFinite(n)? n.toFixed(1)+'%' : '—';
-const mmss = s => { const m=Math.floor(s/60), ss=s%60; return `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`; };
+const {DateTime} = luxon;
 
-// وقت متبقٍ حتى نهاية الساعة (UTC) بالثواني
-function secondsLeftInHourUTC() {
-  const now = new Date();
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours()+1, 0, 0, 0));
-  return Math.max(0, Math.floor((+end - now)/1000));
+// ======= أدوات تنسيق =======
+const fmt2 = x => Number.isFinite(x) ? x.toFixed(2) : '—';
+const pct1 = x => Number.isFinite(x) ? x.toFixed(1)+'%' : '—';
+
+// ======= نافذة الساعة بتوقيت نيويورك =======
+function getETWindow(){
+  const nowET   = DateTime.now().setZone('America/New_York');
+  const startET = nowET.startOf('hour');
+  const endET   = startET.plus({hours:1});
+  const secsLeft = Math.max(0, Math.floor(endET.diff(nowET, 'seconds').seconds));
+  return { startMsUTC: startET.toUTC().toMillis(), secsLeft };
 }
 
-// تقدير التذبذب السنوي من 1m log-returns (EWMA)
-async function estimateSigmaAnnual(minutes = 30) {
-  const limit = Math.min(Math.max(minutes, 5), 1000);
-  const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=${limit}`;
-  const rows = await fetch(url).then(r=>r.json());
-  if (!Array.isArray(rows) || rows.length < 5) return 0.5; // 50% fallback
-  const closes = rows.map(r => +r[4]);
-  const rets = [];
-  for (let i=1;i<closes.length;i++) rets.push( ln(closes[i]/closes[i-1]) );
-
-  const lambda = 0.94;
-  let v = rets[0]**2;
-  for (let i=1;i<rets.length;i++) v = lambda*v + (1-lambda)*rets[i]**2;
-  const sigma1m = Math.sqrt(v);               // لكل دقيقة (لوغ)
-  const minutesPerYear = 525600;              // 365*24*60
-  let sigmaAnnual = sigma1m * Math.sqrt(minutesPerYear);
-
-  // قصّ منطقي لتفادي الجنون
-  sigmaAnnual = clamp(sigmaAnnual, 0.05, 2.0); // [5%, 200%]
-  return sigmaAnnual;
-}
-
-// سعر افتتاح الساعة الحالية (UTC) من شمعة 1h
-async function getPTB_OpenUTC() {
-  const now = new Date();
-  const startUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours(), 0, 0, 0)).getTime();
-  const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${startUTC}&limit=1`;
-  const rows = await fetch(url).then(r=>r.json());
-  if (Array.isArray(rows) && rows.length) return +rows[0][1]; // open
+// ======= جلب PTB: افتتاح شمعة 1h عند بداية الساعة (ET) =======
+async function fetchPTB(startMsUTC){
+  const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${startMsUTC}&limit=1`;
+  const r = await fetch(url); const j = await r.json();
+  if(Array.isArray(j) && j.length) return parseFloat(j[0][1]); // open
   return null;
 }
 
-// احتمالية الإغلاق فوق K (GBM بدون drift)
-function probUp(S0, K, sigmaAnnual, secsLeft){
-  if (!S0 || !K || !sigmaAnnual) return 0.5;
-  const t = secsLeft / (365*24*60*60);
-  const denom = sigmaAnnual * Math.sqrt(Math.max(t, 1e-12));
-  if (denom <= 1e-9) return S0 >= K ? 1 : 0;
-  const z = (ln(S0/K)) / denom;
-  return clamp(phi(z), 0, 1);
+// ======= تقدير تقلب 1m: stddev للّوج عوائد =======
+async function fetchRealizedVol1m(n=60){
+  const url = `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1m&limit=${Math.max(10,Math.min(1000,n))}`;
+  const r = await fetch(url); const d = await r.json();
+  if(!Array.isArray(d) || d.length < 10) return { sigma1m: 0.0015, lastClose: NaN };
+  const closes = d.map(c => +c[4]);
+  const rets = [];
+  for(let i=1;i<closes.length;i++){
+    const r = Math.log(closes[i]/closes[i-1]);
+    if(Number.isFinite(r)) rets.push(r);
+  }
+  if(rets.length < 5) return { sigma1m: 0.0015, lastClose: closes.at(-1) };
+  const mean = rets.reduce((a,b)=>a+b,0)/rets.length;
+  const varr = rets.reduce((a,b)=>a+(b-mean)*(b-mean),0)/(rets.length-1);
+  const sigma1m = Math.sqrt(Math.max(varr, 1e-12)); // stddev لكل دقيقة (لوغ)
+  return { sigma1m, lastClose: closes.at(-1) };
 }
 
-// Expected Move بالدولار = S0 * sigma * sqrt(t)
-function expectedMoveUSD(S0, sigmaAnnual, secsLeft){
-  if (!S0 || !sigmaAnnual) return 0;
-  const t = secsLeft / (365*24*60*60);
-  return Math.max(0, S0 * sigmaAnnual * Math.sqrt(Math.max(t, 0)));
+// ======= احتمال قياسي (CDF) =======
+function phiCDF(z){
+  const t = 1/(1+0.2316419*Math.abs(z));
+  const d = 0.3989422804014327*Math.exp(-0.5*z*z);
+  const p = d*t*(0.319381530 + t*(-0.356563782 + t*(1.781477937 + t*(-1.821255978 + t*1.330274429))));
+  return z>=0 ? 1-p : p;
 }
 
-// ======== state & DOM ========
+// ======= الهجين: GBM + tanh(strength) =======
+function hybridUpDown(price, ptb, expectedMove, secsLeft){
+  const EPS=1e-9;
+  const S=Math.max(EPS, price), K=Math.max(EPS, ptb), EM=Math.max(EPS, expectedMove);
+  // GBM: sigma*sqrt(t) = EM / S  => z = ln(S/K)/(EM/S)
+  const z_gbm = Math.log(S/K) / Math.max(EM/S, EPS);
+  const p_gbm = phiCDF(z_gbm);
+
+  // قوة الحركة: strength = gap/EM  → tanh(beta*strength)
+  const gap = S-K;
+  const strength = gap/EM;
+  const beta = 0.40;
+  const p_strength = 0.5 + 0.5*Math.tanh(beta*strength);
+
+  // وزن ديناميكي (أعلى قرب النهاية)
+  const horizon = Math.max(0, Math.min(1, secsLeft/3600)); // 1 أول الساعة → 0 نهايتها
+  const w_strength = 0.70 + 0.20*(1-horizon); // 0.70 → 0.90
+  const w_gbm = 1 - w_strength;
+
+  let pUp = w_gbm*p_gbm + w_strength*p_strength;
+  pUp = Math.max(0, Math.min(1, pUp));
+  return { pUp, pDown: 1-pUp, details:{p_gbm,p_strength, z_gbm, strength, w_strength, w_gbm} };
+}
+
+// ======= الحالة و التحديث =======
 const el = id => document.getElementById(id);
-const $price = el('price'), $ptb = el('ptb'), $left = el('left'), $gap = el('gap'), $em = el('em'), $up = el('up'), $down = el('down'), $stamp = el('stamp');
+const $price=el('priceVal'), $ptb=el('ptbVal'), $time=el('timeLeftVal'),
+      $gap=el('gapVal'), $em=el('emVal'), $str=el('strengthVal'),
+      $up=el('upVal'), $down=el('downVal'), $stamp=el('stamp');
 
-let latestPrice = null, ptb = null, sigmaAnn = null;
+let state = {
+  price: NaN, ptb: NaN, secsLeft: 0,
+  sigma1m: 0.0015,   // stddev دقيقة (لوغ)
+  lastVolUpdate: 0
+};
 
-// WebSocket سعر لحظي
-function startWS(){
-  const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
-  ws.onmessage = ev => { const m = JSON.parse(ev.data); latestPrice = +m.p; };
-  ws.onclose = () => setTimeout(startWS, 1500);
+// يحسب EM بالدولار بناءً على sigma1m والوقت المتبقي
+function computeExpectedMoveUSD(S, secsLeft, sigma1m){
+  const sigma1s = sigma1m / Math.sqrt(60);         // stddev لكل ثانية (لوغ)
+  const em = S * sigma1s * Math.sqrt(Math.max(secsLeft,1));
+  // حد أدنى صغير لتجنب صفر:
+  return Math.max(em, 0.5);
 }
 
-// تهيئة
-(async function init(){
-  startWS();
-  [ptb, sigmaAnn] = await Promise.all([
-    getPTB_OpenUTC(),
-    estimateSigmaAnnual(30)
-  ]);
-  loop();
-})();
+// يعرض الوقت mm:ss
+function fmtTime(secs){
+  const m = Math.floor(secs/60);
+  const s = secs%60;
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
 
-// حلقة تحديث واجهة كل 1s
-async function loop(){
+function paintGap(valEl, gap){
+  valEl.classList.remove('pos','neg');
+  if (gap>0){ valEl.classList.add('pos'); valEl.textContent = `+${fmt2(gap)}`; }
+  else if (gap<0){ valEl.classList.add('neg'); valEl.textContent = `${fmt2(gap)}`; } // fmt2 يحفظ السالب
+  else { valEl.textContent = fmt2(0); }
+}
+
+function updateUI(){
+  // حدّث الوقت المتبقي
+  const {secsLeft} = getETWindow();
+  state.secsLeft = secsLeft;
+  $time.textContent = fmtTime(secsLeft);
+
+  // EM
+  const EM = computeExpectedMoveUSD(state.price, state.secsLeft, state.sigma1m);
+  $em.textContent = fmt2(EM);
+
+  // Gap & Strength
+  const gap = state.price - state.ptb;
+  paintGap($gap, gap);
+  const strengthPct = Math.max(0, Math.min(999, Math.abs(gap)/Math.max(EM,1e-6)*100));
+  $str.textContent = pct1(strengthPct);
+  $str.classList.remove('pos','neg');
+  $str.classList.add(gap>=0?'pos':'neg');
+
+  // Hybrid probs
+  const {pUp, pDown} = hybridUpDown(state.price, state.ptb, EM, state.secsLeft);
+  $up.textContent   = pct1(pUp*100);
+  $down.textContent = pct1(pDown*100);
+  $up.classList.toggle('pos', pUp>=0.5);  $up.classList.toggle('neg', pUp<0.5);
+  $down.classList.toggle('neg', pDown>=0.5); $down.classList.toggle('pos', pDown<0.5);
+
+  // ختم وقت التحديث
+  const now = new Date().toISOString().replace('T',' ').slice(0,19);
+  $stamp.textContent = `Last update: ${now} UTC`;
+}
+
+async function refreshPTBandVol(){
+  const {startMsUTC, secsLeft} = getETWindow();
+  state.secsLeft = secsLeft;
+  // PTB
   try{
-    // لو الساعة تبدلت أو PTB فقد، أعِد قراءته
-    if (secondsLeftInHourUTC() === 0 || ptb == null) ptb = await getPTB_OpenUTC();
-    if (sigmaAnn == null) sigmaAnn = await estimateSigmaAnnual(30);
+    const ptb = await fetchPTB(startMsUTC);
+    if(Number.isFinite(ptb)){ state.ptb = ptb; $ptb.textContent = fmt2(ptb); }
+  }catch(e){ /* ignore */ }
 
-    const secs = secondsLeftInHourUTC();
-    const S0   = latestPrice;
-    const em$  = expectedMoveUSD(S0, sigmaAnn, secs);
-    const upP  = probUp(S0, ptb, sigmaAnn, secs);
-    const downP= 1 - upP;
-    const gap$ = (S0 && ptb) ? (S0 - ptb) : null;
+  // Vol 1m
+  try{
+    const {sigma1m, lastClose} = await fetchRealizedVol1m(60);
+    if(Number.isFinite(sigma1m)) { state.sigma1m = sigma1m; }
+    if(Number.isFinite(lastClose) && !Number.isFinite(state.price)){
+      state.price = lastClose; $price.textContent = fmt2(state.price);
+    }
+  }catch(e){ /* ignore */ }
 
-    // DOM
-    $price.textContent = fmt2(S0);
-    $ptb.textContent   = fmt2(ptb);
-    $left.textContent  = mmss(secs);
+  updateUI();
+}
 
-    if (gap$!=null){
-      const sign = gap$>=0?'+':'−';
-      const abs  = Math.abs(gap$);
-      $gap.textContent = `${sign}${fmt2(abs)}`;
-      $gap.className = 'val ' + (gap$>=0?'up':'down');
-    } else { $gap.textContent='—'; $gap.className='val'; }
-
-    $em.textContent   = fmt2(em$);
-    $up.textContent   = fmt1p(upP*100);
-    $down.textContent = fmt1p(downP*100);
-
-    const t = new Date().toISOString().slice(0,19).replace('T',' ');
-    $stamp.textContent = `Last update: ${t} UTC · WebSocket: Binance · Vol window: 30m`;
+// WebSocket للسعر
+function startWS(){
+  try{
+    const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@trade');
+    ws.onmessage = ev=>{
+      const msg = JSON.parse(ev.data);
+      const p = parseFloat(msg.p);
+      if(Number.isFinite(p)){
+        state.price = p;
+        $price.textContent = fmt2(p);
+        updateUI();
+      }
+    };
+    ws.onclose = ()=> setTimeout(startWS, 3000);
+    ws.onerror = ()=> { try{ ws.close(); }catch{} };
   }catch(e){
-    console.error(e);
-  }finally{
-    setTimeout(loop, 1000);
+    // Fallback REST كل 3 ثواني
+    setInterval(async ()=>{
+      try{
+        const r = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT');
+        const j = await r.json(); const p = parseFloat(j.price);
+        if(Number.isFinite(p)){ state.price = p; $price.textContent = fmt2(p); updateUI(); }
+      }catch(_){}
+    }, 3000);
   }
 }
+
+(async function init(){
+  // مبدئيًا
+  await refreshPTBandVol();
+  startWS();
+
+  // حدّث الوقت وEM كل ثانية
+  setInterval(updateUI, 1000);
+
+  // أعِد جلب PTB & Vol دوريًا
+  setInterval(refreshPTBandVol, 30000);
+})();
 </script>
 </body>
 </html>
