@@ -1,417 +1,260 @@
-<!DOCTYPE html><html lang="ar" dir="rtl">
+<!doctype html>
+<html lang="en" dir="ltr">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>حساب السعر العادل لساعة BTC (Up/Down)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>BTC Up/Down — Hybrid</title>
   <style>
-    :root {
-      --bg: #0b1220;
-      --panel: #121a2b;
-      --panel-2: #0f172a;
-      --accent: #22d3ee;
-      --accent-2: #60a5fa;
-      --text: #e5e7eb;
-      --muted: #94a3b8;
-      --danger: #ef4444;
-      --success: #10b981;
-      --warn: #f59e0b;
-      --shadow: 0 10px 30px rgba(0,0,0,.35);
+    :root{
+      --bg:#0b0b0d;
+      --panel:#141418;
+      --muted:#9aa0a6;
+      --text:#e9eaee;
+      --green:#17c964;
+      --red:#ff3b3b;
+      --amber:#f5a524;
+      --card-radius:18px;
     }
-    * { box-sizing: border-box }
-    body {
-      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans", "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
-      background: radial-gradient(1200px 600px at 80% -10%, rgba(34,211,238,.08), transparent),
-                  radial-gradient(900px 500px at 0% 10%, rgba(96,165,250,.08), transparent), var(--bg);
-      color: var(--text);
+    *{box-sizing:border-box}
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font:400 16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+      -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
     }
-    header { padding: 18px 16px 6px; text-align: center }
-    h1 { margin: 0; font-size: 1.25rem; letter-spacing: .2px }
-    .container { max-width: 980px; margin: 0 auto; padding: 14px }.grid { display: grid; gap: 14px }
-@media (min-width: 820px) { .grid { grid-template-columns: 1.1fr .9fr } }
-
-.card { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid rgba(255,255,255,.06); border-radius: 18px; box-shadow: var(--shadow); }
-.card .inner { padding: 16px }
-
-.row { display:flex; gap: 10px; flex-wrap:wrap; align-items: center }
-label { display:block; font-size:.9rem; color: var(--muted); margin-bottom:6px }
-input, select, button { outline: none; border: 1px solid rgba(255,255,255,.08); background: #0b1220; color: var(--text); border-radius: 12px; padding: 12px 12px; font-size: 1rem }
-input[type="number"] { width: 100% }
-input[type="datetime-local"] { width: 100% }
-button { cursor: pointer; background: linear-gradient(180deg, #0e172a, #0a1220); transition: .2s transform, .2s opacity }
-button:hover { transform: translateY(-1px) }
-.btn { padding: 10px 12px; border-radius: 12px }
-.btn-accent { border-color: rgba(34,211,238,.5) }
-
-.cols { display:grid; gap:12px; grid-template-columns: repeat(2, minmax(0,1fr)) }
-@media (max-width: 460px){ .cols { grid-template-columns: 1fr } }
-
-.stat { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.06); border-radius: 16px; padding: 12px }
-.stat .k { color: var(--muted); font-size: .82rem }
-.stat .v { font-variant-numeric: tabular-nums; font-weight: 650; font-size: 1.6rem; font-weight: 700; letter-spacing: .2px }
-.price { color: var(--accent) }
-.delta-pos { color: var(--success) }
-.delta-neg { color: var(--danger) }
-.pill { padding: 8px 10px; border-radius: 999px; font-size:.92rem; display:inline-flex; align-items:center; gap:8px }
-.pill.up { border: 1px solid rgba(34,211,238,.4) }
-.pill.down { border: 1px solid rgba(239,68,68,.4) }
-
-.footer { text-align: center; color: var(--muted); font-size:.85rem; padding: 12px 0 20px }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace }
-
-.advanced{ display:none !important } .gridResults{display:grid;gap:12px} </style>
-
+    .wrap{max-width:720px; margin:32px auto 48px; padding:0 16px}
+    .title{font-size:34px; font-weight:800; letter-spacing:.2px; margin-bottom:6px}
+    .subtitle{color:var(--muted); font-size:14px; margin-bottom:20px}
+    .grid{display:flex; flex-direction:column; gap:14px}
+    .card{
+      background:var(--panel); border-radius:var(--card-radius);
+      padding:18px 20px; display:flex; align-items:center; justify-content:space-between;
+      box-shadow:0 0 0 1px rgba(255,255,255,.03), 0 8px 24px rgba(0,0,0,.35);
+    }
+    .label{color:var(--muted); text-transform:uppercase; letter-spacing:.12em; font-size:12px}
+    .value{font-variant-numeric:tabular-nums; font-weight:800; font-size:22px}
+    .value.small{font-size:20px; font-weight:700}
+    .pos{color:var(--green)}
+    .neg{color:var(--red)}
+    .foot{margin-top:18px; color:var(--muted); font-size:12px}
+    .dot{display:inline-block; width:6px; height:6px; border-radius:50%; background:#666; margin:0 6px; vertical-align:middle}
+    .pill{display:inline-block; padding:.2rem .6rem; border-radius:999px; background:#1c1c22; color:#c9cbd1; font-size:12px}
+  </style>
 </head>
 <body>
-  <header>
-    <h1>BTC Up/Down — Hybrid</h1>
-    <div class="k">Live from Binance · Hour window (ET)</div>
-  </header>
-  <div class="container grid">
-    <!-- LEFT: Live + Inputs -->
-    <section class="card">
-      <div class="inner">
-        <div style="display:flex; align-items:end; justify-content:space-between; gap:12px; flex-wrap:wrap">
-          <div>
-            <div class="k">سعر البتكوين (مصدر: Binance WebSocket)</div>
-            <div class="big price mono" id="price">—</div>
-          </div>
-          <div style="text-align:end">
-            <div class="k">الوقت المتبقي حتى نهاية النافذة</div>
-            <div class="big mono" id="countdownTop">00:00</div>
-          </div>
-        </div>
-        <hr style="border:none; border-top:1px solid rgba(255,255,255,.06); margin:14px 0">
-        <div class="cols">
-          <div>
-            <label for="k">سعر الرهان (Price to Beat)</label>
-            <input id="k" type="number" step="0.01" placeholder="مثال: 117920.14">
-          </div>
-          <div>
-            <label for="sigma">التقلّب السنوي σ% (غيّر حسب رؤيتك)</label>
-            <input id="sigma" type="number" step="1" min="10" max="300" value="80">
-          </div>
-        </div>
-        <div class="cols" style="margin-top:10px">
-          <div>
-            <label for="end">وقت الانتهاء (حسب جهازك)</label>
-            <input id="end" type="datetime-local">
-          </div>
-          <div>
-            <label>التحديث تلقائي كل ساعة (ET ثابت)</label>
-            <div class="k">لا حاجة لاختصارات. يتم ضبط نهاية الساعة تلقائيًا على أعلى الساعة التالية بتوقيت ET.</div>
-        </div>
-        <div class="row" style="margin-top:10px; gap:8px; flex-wrap:wrap">
-          <button class="btn" id="syncK">اجعل K = السعر الحالي</button>
-          <button class="btn" id="save">حفظ الإعدادات</button>
-          <button class="btn" id="dlCSV">تنزيل CSV</button>
-          <button class="btn" id="clearLog">مسح السجل</button>
-          <span class="k" id="etLabel"></span>
-        </div>
-      </div>
-    </section><!-- RIGHT: Results -->
-<section class="card">
-  <div class="inner">
-    <div class="gridResults">
-      <div class="stat"><div class="k">PRICE</div><div class="v mono" id="priceStat">—</div></div>
-      <div class="stat"><div class="k">PRICE TO BEAT</div><div class="v mono" id="kView">—</div></div>
-      <div class="stat"><div class="k">TIME LEFT</div><div class="v mono" id="countdownStat">—</div></div>
-      <div class="stat"><div class="k">GAP TO BEAT ($)</div><div class="v mono" id="delta">—</div></div>
-      <div class="stat"><div class="k">EXPECTED MOVE ($)</div><div class="v mono" id="em">—</div></div>
-      <div class="stat"><div class="k">STRENGTH (%)</div><div class="v mono" id="strength">—</div></div>
-      <div class="stat"><div class="k">UP %</div><div class="v mono" id="pUp">—</div></div>
-      <div class="stat"><div class="k">DOWN %</div><div class="v mono" id="pDown">—</div></div>
+  <div class="wrap">
+    <div class="title">BTC Up/Down — Hybrid</div>
+    <div class="subtitle">
+      Live from Binance <span class="dot"></span>
+      <span class="pill">Hour window (ET)</span>
     </div>
-    <div class="k" id="lastUpdate" style="margin-top:10px; text-align:center">Last update: —</div>
+
+    <div class="grid">
+      <div class="card"><div class="label">Price</div><div id="price" class="value">—</div></div>
+      <div class="card"><div class="label">Price to Beat</div><div id="ptb" class="value">—</div></div>
+      <div class="card"><div class="label">Time Left</div><div id="left" class="value">—</div></div>
+      <div class="card"><div class="label">Gap to Beat ($)</div><div id="gap" class="value neg">—</div></div>
+      <div class="card"><div class="label">Expected Move ($)</div><div id="em" class="value small">—</div></div>
+      <div class="card"><div class="label">Strength (%)</div><div id="strength" class="value small">—</div></div>
+      <div class="card"><div class="label">Up %</div><div id="up" class="value pos">—</div></div>
+      <div class="card"><div class="label">Down %</div><div id="down" class="value neg">—</div></div>
+    </div>
+
+    <div id="footer" class="foot">Last update: —</div>
   </div>
-</section>
 
-  </div>  <div class="container">
-    <div class="footer">لا تعتبر هذه الصفحة نصيحة مالية. احرص على مطابقة وقت الانتهاء مع نافذة Polymarket (عادةً أعلى الساعة بتوقيت ET).</div>
-  </div>  <script>
-    const $ = (id) => document.getElementById(id);
+  <script>
+    // ====== Config ======
+    const SYMBOL = 'BTCUSDT';
+    const WS_URL = `wss://stream.binance.com:9443/ws/${SYMBOL.toLowerCase()}@trade`;
+    const API = 'https://api.binance.com/api/v3';
+    const ET_TZ = 'America/New_York';
 
-    // ---------- Utilities ----------
-    const fmtUSD = (x) => Number(x).toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
-    const fmtPct = (x) => (x*100).toFixed(2) + '%';
+    // ====== State ======
+    let ws;
+    let price = null;          // current price
+    let priceToBeat = null;    // hour open (ET)
+    let expectedMove = null;   // $ one-sigma for 1 hour (realized)
+    let lastUpdate = null;
 
-    function saveSettings(){
-      const payload = {
-        k: $('#k').value,
-        sigma: $('#sigma').value,
-        end: $('#end').value
-      };
-      localStorage.setItem('btc-hourly-settings', JSON.stringify(payload));
-    }
-    function loadSettings(){
-      try{
-        const s = JSON.parse(localStorage.getItem('btc-hourly-settings')||'{}');
-        if(s.k) $('#k').value = s.k;
-        if(s.sigma) $('#sigma').value = s.sigma;
-        if(s.end) $('#end').value = s.end;
-        if(typeof s.autoHourly !== 'undefined') $('#autoHourly').checked = !!s.autoHourly;
-        if(typeof s.lockK !== 'undefined') $('#lockK').checked = !!s.lockK;
-        if(s.hourlyTZ) $('#hourlyTZ').value = s.hourlyTZ;
-      }catch{}
+    // ====== Utils ======
+    const fmt = (n, d=2) => Number(n).toLocaleString(undefined,{maximumFractionDigits:d, minimumFractionDigits:d});
+    const clamp = (x,min,max)=>Math.max(min,Math.min(max,x));
+
+    function getParts(date, tz){
+      const fmt = new Intl.DateTimeFormat('en-US',{
+        timeZone: tz, hour12:false,
+        year:'numeric', month:'2-digit', day:'2-digit',
+        hour:'2-digit', minute:'2-digit', second:'2-digit'
+      }).formatToParts(date);
+      const g = t => +fmt.find(p=>p.type===t).value;
+      return {year:g('year'), month:g('month'), day:g('day'), hour:g('hour'), minute:g('minute'), second:g('second')};
     }
 
-    // Normal CDF using erf approximation
+    // ET offset from UTC in ms (robust w/ DST)
+    function getTzOffsetMs(tz){
+      const now = new Date();
+      const pET = getParts(now, tz);
+      const pUTC = getParts(now, 'UTC');
+      const asET = Date.UTC(pET.year, pET.month-1, pET.day, pET.hour, pET.minute, pET.second);
+      const asUTC = Date.UTC(pUTC.year, pUTC.month-1, pUTC.day, pUTC.hour, pUTC.minute, pUTC.second);
+      return asUTC - asET; // add to ET-wall-clock to get real UTC epoch
+    }
+
+    // Start of current ET hour in UTC ms
+    function startOfETHourUTC(){
+      const now = new Date();
+      const p = getParts(now, ET_TZ);
+      const offset = getTzOffsetMs(ET_TZ);
+      return Date.UTC(p.year, p.month-1, p.day, p.hour, 0, 0) + offset;
+    }
+
+    // Seconds left to next ET hour
+    function secondsLeftInETHour(){
+      const p = getParts(new Date(), ET_TZ);
+      return (59 - p.minute) * 60 + (60 - p.second);
+    }
+
+    // Normal CDF via erf approximation
     function erf(x){
-      // Abramowitz and Stegun formula 7.1.26
-      const sign = Math.sign(x);
-      x = Math.abs(x);
+      const s = Math.sign(x); x = Math.abs(x);
       const a1=0.254829592, a2=-0.284496736, a3=1.421413741, a4=-1.453152027, a5=1.061405429, p=0.3275911;
       const t = 1/(1+p*x);
-      const y = 1 - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*Math.exp(-x*x);
-      return sign * y;
+      const y = 1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);
+      return s*y;
     }
-    const Phi = (z) => 0.5 * (1 + erf(z/Math.SQRT2));
+    const cdf = x => 0.5*(1+erf(x/Math.SQRT2));
 
-    function bsUpProb(S, K, tauYears, sigma){
-      if(!(S>0 && K>0) || tauYears <= 0 || sigma <= 0) return NaN;
-      const d2 = (Math.log(S/K) - 0.5 * sigma*sigma * tauYears) / (sigma * Math.sqrt(tauYears));
-      return Phi(d2); // Probability that S_T > K under risk-neutral lognormal
-    }
-
-    function nextHourLocal(){
-      const d = new Date();
-      d.setMilliseconds(0); d.setSeconds(0); d.setMinutes(0); d.setHours(d.getHours()+1);
-      return d;
-    }
-
-    function toDatetimeLocalValue(d){
-      const pad = (n) => String(n).padStart(2,'0');
-      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    }
-
-    // Next hour in a target IANA timezone, converted to a real UTC timestamp
-    function nextHourInTZ(tz){
-      const now = new Date();
-      // Represent 'now' in the target TZ (as local wall time)
-      const nowTZ = new Date(now.toLocaleString('en-US', { timeZone: tz }));
-      const endTZ = new Date(nowTZ);
-      endTZ.setMilliseconds(0); endTZ.setSeconds(0); endTZ.setMinutes(0); endTZ.setHours(endTZ.getHours()+1);
-      // diff between real UTC timestamp and the faux local tz timestamp
-      const diff = now.getTime() - nowTZ.getTime();
-      const endUTC = new Date(endTZ.getTime() + diff);
-      return endUTC;
-    }
-
-    function updateETLabel(end){
-      if(!(end instanceof Date)) return;
-      const et = new Date(end.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-      const pad = (n) => String(n).padStart(2,'0');
-      const s = `${et.getFullYear()}-${pad(et.getMonth()+1)}-${pad(et.getDate())} ${pad(et.getHours())}:${pad(et.getMinutes())} ET`;
-      $('#etLabel').textContent = `يعادل: ${s}`;
-    }
-
-    // ---------- Live price (WebSocket) ----------
-    let lastPrice = NaN;
-    let ws, wsRetryTimer = null;
-    let lastUpdateAt = null;
-    const WS_URL = 'wss://stream.binance.com:9443/ws/btcusdt@trade';
-
-    function connectWS(retryMs = 1000){
-      try{
-        if(ws){ try { ws.close(); } catch(e){} }
-        ws = new WebSocket(WS_URL);
-        ws.onopen = () => { /* connected */ };
-        ws.onmessage = (ev) => {
-          try {
-            const data = JSON.parse(ev.data);
-            const p = Number(data.p || data.c); // trade stream -> p, ticker -> c
-            if(Number.isFinite(p)){
-              lastPrice = p;
-              $('#price').textContent = '$' + fmtUSD(p);
-              const ps = document.getElementById('priceStat'); if(ps) ps.textContent = fmtUSD(p);
-              lastPrice = p; lastUpdateAt = new Date();
-              if(!$('#k').value){ $('#k').value = p.toFixed(2); }
-            }
-          } catch(e){}
-        };
-        ws.onerror = () => { try { ws.close(); } catch(e){} };
-        ws.onclose = () => {
-          clearTimeout(wsRetryTimer);
-          wsRetryTimer = setTimeout(() => connectWS(Math.min(retryMs * 1.8, 15000)), retryMs);
-        };
-      } catch(e){
-        clearTimeout(wsRetryTimer);
-        wsRetryTimer = setTimeout(() => connectWS(Math.min(retryMs * 1.8, 15000)), retryMs);
-      }
-    }
-
-    // ---------- Logs (in-memory + localStorage) ----------
-    const logs = [];
-    function loadLogs(){ try{ const a = JSON.parse(localStorage.getItem('btc-hourly-logs')||'[]'); if(Array.isArray(a)) logs.push(...a); }catch{}
-    }
-    function saveLogs(){ try{ localStorage.setItem('btc-hourly-logs', JSON.stringify(logs)); }catch{}
-    }
-    function downloadCSV(){
-      try{
-        const header = ['stamp','K','sigmaPct','pUp','pDown'];
-        const rows = logs.map(r => [r.stamp, r.K, r.sigmaPct, Number(r.pUp||0).toFixed(6), Number(r.pDown||0).toFixed(6)]);
-        const csv = [header.join(','), ...rows.map(r => r.join(','))].join('
-');
-        const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = 'btc-hourly-log.csv'; document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(()=> URL.revokeObjectURL(url), 1000);
-      }catch(e){ console.warn(e); }
-    });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a'); a.href = url; a.download = 'btc-hourly-log.csv'; document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(()=> URL.revokeObjectURL(url), 1000);
-      }catch(e){ console.warn(e); }
-    }
-
-    // Extra display helpers
-    function extraDisplay(tau){
-      const Kview = Number($('#k').value);
-      if(Number.isFinite(Kview)) { const el = document.getElementById('kView'); if(el) el.textContent = fmtUSD(Kview); }
-      if(Number.isFinite(lastPrice) && Number.isFinite(Kview)){
-        const d = lastPrice - Kview;
-        const signCls = d>=0 ? 'delta-pos' : 'delta-neg';
-        $('#delta').innerHTML = '<span class="'+signCls+'">'+(d>=0?'+':'')+fmtUSD(d)+'</span>';
-      }
-      const sigmaPct = Number($('#sigma').value);
-      if(Number.isFinite(lastPrice) && Number.isFinite(tau) && tau>0 && Number.isFinite(sigmaPct)){
-        const sigma = sigmaPct/100;
-        const emv = lastPrice * sigma * Math.sqrt(tau);
-        const eme = document.getElementById('em'); if(eme) eme.innerHTML = '<span class="delta-pos">'+fmtUSD(emv)+'</span>';
-        const gap2 = Number.isFinite(Kview) ? Math.abs(lastPrice - Kview) : NaN;
-        if(Number.isFinite(gap2)){
-          const st = emv / (gap2 || 1e-9) * 100;
-          const se = document.getElementById('strength'); if(se) se.innerHTML = '<span class="delta-pos">'+st.toFixed(1)+'%<\/span>';
-        }
-      }
-    }
-
-    // ---------- Countdown & Calculations ----------
-    function getEndDateFromInput(){
-      const v = $('#end').value;
-      if(!v) return null;
-      // v is local "YYYY-MM-DDTHH:mm"; construct as local
-      const d = new Date(v.replace('T',' ') + ':00');
-      if(isNaN(d.getTime())) return null;
-      return d;
-    }
-
-    function tick(){
-      let end = getEndDateFromInput();
-      if(end){ updateETLabel(end); }
-
-      // Auto-hourly rollover (forced ET)
-      const nowA = new Date();
-      if(!end || (end.getTime() - nowA.getTime()) <= 0){
-        const d = nextHourInTZ('America/New_York');
-        document.getElementById('end').value = toDatetimeLocalValue(d);
-        updateETLabel(d);
-        if(Number.isFinite(lastPrice)){
-          document.getElementById('k').value = lastPrice.toFixed(2);
-        }
-        // Log the new hour start
-        try{
-          const startET = new Date(d.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-          const pad = (n) => String(n).padStart(2,'0');
-          const stamp = `${startET.getFullYear()}-${pad(startET.getMonth()+1)}-${pad(startET.getDate())} ${pad(startET.getHours())}:00 ET`;
-          const sigma = Number(document.getElementById('sigma').value)/100;
-          const tauStart = 1/(24*365);
-          const Know = Number(document.getElementById('k').value);
-          const pUp0 = bsUpProb(Know, Know, tauStart, Number.isFinite(sigma)? sigma : 0.8);
-          logs.push({ stamp, K: Know, sigmaPct: Number.isFinite(sigma)? (sigma*100) : 80, pUp: pUp0, pDown: 1-(pUp0||0) });
-          saveLogs();
-        }catch(e){}
-        saveSettings();
-        end = d;
-      }
-
-      // countdown
-      const now = new Date();
-      let leftMs = end ? (end.getTime() - now.getTime()) : NaN;
-      if(!Number.isFinite(leftMs)) {
-        const el1 = document.getElementById('countdownTop'); if(el1) el1.textContent = '—';
-        const el2 = document.getElementById('countdownStat'); if(el2) el2.textContent = '—';
-      } else if(leftMs <= 0) {
-        const txt = 'انتهت';
-        const el1 = document.getElementById('countdownTop'); if(el1) el1.textContent = txt;
-        const el2 = document.getElementById('countdownStat'); if(el2) el2.textContent = txt;
-      } else {
-        const total = Math.max(0, Math.floor(leftMs/1000));
-        const m = Math.floor(total/60);
-        const sec = total % 60;
-        const txt = `${m}:${String(sec).padStart(2,'0')}`;
-        const el1 = document.getElementById('countdownTop'); if(el1) el1.textContent = txt;
-        const el2 = document.getElementById('countdownStat'); if(el2) el2.textContent = txt;
-      }
-
-      // compute tau
-      let tau = NaN;
-      if(Number.isFinite(leftMs) && leftMs>0){
-        tau = leftMs / (1000 * 60 * 60 * 24 * 365);
-        extraDisplay(tau);
-      }
-
-      // compute delta
-      const K = Number($('#k').value);
-      if(Number.isFinite(lastPrice) && Number.isFinite(K)){
-        const d = lastPrice - K;
-        const signCls = d>=0 ? 'delta-pos' : 'delta-neg';
-        $('#delta').innerHTML = `<span class="${signCls}">${d>=0?'+':''}$${fmtUSD(d)}</span>`;
-      } else {
-        $('#delta').textContent = '—';
-      }
-
-      // compute probs
-      const sigmaPct = Number($('#sigma').value);
-      if(Number.isFinite(lastPrice) && Number.isFinite(K) && Number.isFinite(tau) && tau>0 && Number.isFinite(sigmaPct)){
-        const sigma = sigmaPct/100;
-        const pUp = bsUpProb(lastPrice, K, tau, sigma);
-        if(Number.isFinite(pUp)){
-          $('#pUp').textContent = `${fmtPct(pUp)}`;
-          const pDown = 1 - pUp;
-          $('#pDown').textContent = `${fmtPct(pDown)}`;
-        } else {
-          $('#pUp').textContent = '—';
-          $('#pDown').textContent = '—';
-        }
-      } else {
-        $('#pUp').textContent = '—';
-        $('#pDown').textContent = '—';
-      }
-    }
-
-    // ---------- Bindings ----------
-    $('#syncK').addEventListener('click', () => {
-      if(Number.isFinite(lastPrice)){
-        $('#k').value = lastPrice.toFixed(2);
-        saveSettings();
-      }
-    });
-    $('#save').addEventListener('click', saveSettings);
-
-    // Persist input changes live
-    ['k','sigma','end'].forEach(id => {
+    function setText(id, text, cls){
       const el = document.getElementById(id);
       if(!el) return;
-      el.addEventListener('change', saveSettings);
-      el.addEventListener('input', () => {/* live tick */});
-    });
+      if(cls){ el.classList.remove('pos','neg'); el.classList.add(cls); }
+      el.textContent = text;
+    }
 
-    // logging controls
-    const dl = document.getElementById('dlCSV');
-    if(dl) dl.addEventListener('click', downloadCSV);
-    const clr = document.getElementById('clearLog');
-    if(clr) clr.addEventListener('click', () => { logs.length = 0; saveLogs(); alert('تم مسح السجل'); });
+    function setFooter(){
+      const now = new Date();
+      const utc = new Intl.DateTimeFormat('en-GB',{timeZone:'UTC', hour12:false,
+        year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'
+      }).format(now).replace(',', '');
+      document.getElementById('footer').innerHTML =
+        `Last update: ${utc} UTC <span class="dot"></span> WebSocket: Binance <span class="dot"></span> TZ: ${ET_TZ} (ET)`;
+    }
 
-    // Init
-    loadSettings();
-    loadLogs();
-    const dInit = nextHourInTZ('America/New_York');
-    document.getElementById('end').value = toDatetimeLocalValue(dInit);
-    updateETLabel(dInit);
+    // ====== Data fetchers ======
 
-    connectWS();
-    tick();
-    setInterval(tick, 250);
-    setInterval(() => { if(lastUpdateAt){ const s = lastUpdateAt.toISOString().replace('T',' ').slice(0,19)+' UTC'; $('#lastUpdate').textContent = `Last update: ${s} · WebSocket: Binance · TZ: America/New_York (ET)`; } }, 1000);
-  </script></body>
+    // 1) Price to Beat = open price at start of the current ET hour
+    async function loadPriceToBeat(){
+      try{
+        const start = startOfETHourUTC();
+        const end = start + 60_000; // first 1m candle in the hour
+        const url = `${API}/klines?symbol=${SYMBOL}&interval=1m&startTime=${start}&endTime=${end}&limit=1`;
+        const res = await fetch(url);
+        const arr = await res.json();
+        if(Array.isArray(arr) && arr.length){
+          priceToBeat = parseFloat(arr[0][1]); // open
+          setText('ptb', fmt(priceToBeat, 2));
+        }
+      }catch(e){ console.error('PriceToBeat error', e); }
+    }
+
+    // 2) Expected Move ($) from realized vol of last 60 1m candles
+    async function loadExpectedMove(){
+      try{
+        const url = `${API}/klines?symbol=${SYMBOL}&interval=1m&limit=120`;
+        const res = await fetch(url);
+        const kl = await res.json();
+        if(!Array.isArray(kl) || kl.length < 61) return;
+
+        // log-returns at 1m
+        const closes = kl.map(k => +k[4]);
+        let rets = [];
+        for(let i=1;i<closes.length;i++){
+          rets.push(Math.log(closes[i]/closes[i-1]));
+        }
+        // std of 1m returns
+        const mean = rets.reduce((a,b)=>a+b,0)/rets.length;
+        const variance = rets.reduce((a,b)=>a+(b-mean)**2,0)/(rets.length-1);
+        const sigma1m = Math.sqrt(variance);
+        const sigma1h = sigma1m * Math.sqrt(60);
+        if(price){
+          expectedMove = price * sigma1h;
+          setText('em', fmt(expectedMove, 2));
+        }
+      }catch(e){ console.error('ExpectedMove error', e); }
+    }
+
+    // 3) WebSocket live price
+    function connectWS(){
+      if(ws) try{ ws.close(); }catch{}
+      ws = new WebSocket(WS_URL);
+      ws.onmessage = (ev)=>{
+        const d = JSON.parse(ev.data);
+        price = parseFloat(d.p);
+        lastUpdate = Date.now();
+        setText('price', fmt(price, 2));
+        updateDerived();
+        setFooter();
+      };
+      ws.onclose = ()=>{ setTimeout(connectWS, 1500); };
+      ws.onerror = ()=>{ try{ ws.close(); }catch{} };
+    }
+
+    // ====== Derived metrics ======
+    function updateDerived(){
+      if(priceToBeat==null || price==null) return;
+
+      const gap = price - priceToBeat;
+      setText('gap', (gap>=0?'+':'') + fmt(gap, 2), gap>=0 ? 'pos' : 'neg');
+
+      // Strength
+      if(expectedMove!=null && expectedMove>0){
+        const strength = clamp(Math.abs(gap) / expectedMove * 100, 0, 999);
+        setText('strength', fmt(strength, 1));
+      }
+
+      // Probabilities (residual of the hour)
+      if(expectedMove!=null && expectedMove>0){
+        const secsLeft = secondsLeftInETHour();
+        const frac = clamp(secsLeft/3600, 0, 1);
+        const sigmaHour = expectedMove;               // $ one-sigma full hour
+        const sigmaRem = sigmaHour * Math.sqrt(frac); // $ one-sigma remaining
+        const z = (-gap) / (sigmaRem + 1e-9);         // chance to finish above PTB
+        const upP = cdf(z) * 100;
+        const downP = 100 - upP;
+
+        setText('up', fmt(upP, 1), 'pos');
+        setText('down', fmt(downP, 1), 'neg');
+      }
+    }
+
+    // ====== Timers ======
+    function tick(){
+      // Time left
+      const secs = secondsLeftInETHour();
+      const mm = String(Math.floor(secs/60)).padStart(2,'0');
+      const ss = String(secs%60).padStart(2,'0');
+      setText('left', `${mm}:${ss}`);
+
+      // top of hour rollover
+      if(mm==='59' && ss==='59'){ /* nothing */ }
+      if(mm==='00' && ss==='05'){ // refresh PTB shortly after hour flips
+        loadPriceToBeat();
+        loadExpectedMove();
+      }
+
+      // keep derived numbers fresh
+      updateDerived();
+    }
+
+    // ====== Init ======
+    async function init(){
+      connectWS();
+      await loadPriceToBeat();
+      await loadExpectedMove();
+      setInterval(tick, 1000);
+      setFooter();
+    }
+    init();
+  </script>
+</body>
 </html>
