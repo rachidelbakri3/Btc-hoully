@@ -1,8 +1,0 @@
-{
-  "name": "Crypto Up/Down — PWA",
-  "short_name": "UpDown",
-  "start_url": ".",
-  "display": "standalone",
-  "background_color": "#0b0f1a",
-  "theme_color": "#0b0f1a"
-}
