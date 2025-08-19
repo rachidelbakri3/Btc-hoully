@@ -22,8 +22,6 @@
   .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace}
   .pos{color:var(--pos)} .neg{color:var(--neg)}
   .foot{color:var(--muted);font-size:12px;margin-top:18px;line-height:1.5}
-  .opts label{font-size:14px; font-weight:600; color:var(--ink);}
-  .opts input{transform: translateY(1px);}
 </style>
 </head>
 <body>
@@ -40,14 +38,6 @@
       <div class="row"><div class="lbl">STRENGTH (%)</div>      <div id="strVal"      class="val mono">—</div></div>
       <div class="row"><div class="lbl">UP %</div>              <div id="upVal"       class="val mono">—</div></div>
       <div class="row"><div class="lbl">DOWN %</div>            <div id="downVal"     class="val mono">—</div></div>
-      <!-- مفتاح التبديل -->
-      <div class="row">
-        <div class="lbl">PROB MODE</div>
-        <div class="val mono opts">
-          <label><input type="radio" name="mode" value="poly" checked> Poly-like</label>
-          <label style="margin-inline-start:14px;"><input type="radio" name="mode" value="bs"> Black–Scholes d2</label>
-        </div>
-      </div>
     </div>
 
     <div class="foot" id="footNote">Connecting…</div>
@@ -73,7 +63,7 @@ function setText(id, text, colorClass=null){
 function signClass(n){ if(!isFinite(n)) return null; return n>=0 ? "pos":"neg"; }
 function nowET(){ return DateTime.now().setZone(TZ); }
 
-/* Normal CDF (Abramowitz–Stegun, بدون Math.erf) */
+/* Normal CDF (بدون Math.erf) */
 function normCDF(x){
   const a1=0.254829592, a2=-0.284496736, a3=1.421413741, a4=-1.453152027, a5=1.061405429;
   const p=0.3275911;
@@ -88,21 +78,20 @@ function normCDF(x){
 let S = NaN;      // live price
 let PTB = NaN;    // price to beat (open at start of ET hour)
 let gap = NaN;    // S - PTB
-let minutesLeft = 0;
-let sigma_pm = NaN; // per-minute volatility (EWMA of 1m returns)
+let minutesLeft = 0; // قد تكون كسريّة (سنحسبها بدقّة)
+let sigma_pm = NaN; // per-minute volatility (blend)
 let EM = NaN;     // expected move ($)
 let ws = null;
 let lastFoot = "";
-let probMode = "poly"; // "poly" أو "bs"
 
 /* ========= Time Window (ET hour) ========= */
 function getHourWindowET(){
   const now = nowET();
   const start = now.startOf("hour");
   const end   = start.plus({hours:1});
-  const msToEnd = end.toMillis() - now.toMillis();
-  const mins = Math.max(0, msToEnd/60000);
-  return {start, end, minutesLeft: mins};
+  const diff = end.diff(now, ["minutes","seconds"]);
+  const minsPrecise = Math.max(0, diff.minutes + diff.seconds/60); // دقائق كسريّة
+  return {start, end, minutesLeftPrecise: minsPrecise};
 }
 function renderTimeLeft(){
   const {end} = getHourWindowET();
@@ -120,7 +109,7 @@ async function fetchPTB(){
   try{
     const res = await fetch(`${REST}/klines?symbol=${SYM}&interval=1m&startTime=${startUTCms}&limit=1`);
     const data = await res.json();
-    if(Array.isArray(data) && data.length) open = parseFloat(data[0][1]); // 'o'
+    if(Array.isArray(data) && data.length) open = parseFloat(data[0][1]); // open
   }catch(e){}
   if(!isFinite(open)){
     try{
@@ -133,61 +122,88 @@ async function fetchPTB(){
   setText("ptbVal", isFinite(PTB)? fmtUSD(PTB) : "—");
 }
 
-/* ========= Realized Vol (EWMA, 1m) ========= */
+/* ========= Realized Vol (EWMA + Parkinson) ========= */
 async function fetchSigmaPerMinute(){
   try{
     const res = await fetch(`${REST}/klines?symbol=${SYM}&interval=1m&limit=500`);
     const kl = await res.json();
     if(!Array.isArray(kl) || kl.length < 30) return;
 
-    const closes = kl.map(row => parseFloat(row[4]));
+    const opens  = kl.map(r => parseFloat(r[1]));
+    const highs  = kl.map(r => parseFloat(r[2]));
+    const lows   = kl.map(r => parseFloat(r[3]));
+    const closes = kl.map(r => parseFloat(r[4]));
+
+    // 1) EWMA على عوائد الإغلاق
     const rets = [];
     for(let i=1;i<closes.length;i++){
       const r = Math.log(closes[i] / closes[i-1]);
       if(isFinite(r)) rets.push(r);
     }
-
-    const lambda = 0.96; // حساسية آخر الدقائق
-    let v = rets.length ? rets[0]*rets[0] : 0;
+    const lambda = 0.96; // قلّلها لزيادة الحساسية لآخر الدقائق (0.90–0.95)
+    let v_ewma = rets.length ? rets[0]*rets[0] : 0;
     for(let i=1;i<rets.length;i++){
-      v = lambda * v + (1-lambda) * (rets[i]*rets[i]);
+      v_ewma = lambda * v_ewma + (1-lambda) * (rets[i]*rets[i]);
     }
-    sigma_pm = Math.sqrt(Math.max(v,0));
-    renderAll(); // تحديث فوري بعد وصول σ
+    const sigma_ewma = Math.sqrt(Math.max(v_ewma, 0));
+
+    // 2) Parkinson (High–Low) على نافذة متكيّفة مع الوقت المتبقي
+    const {minutesLeftPrecise} = getHourWindowET();
+    const M = Math.max(20, Math.min(120, Math.floor(minutesLeftPrecise * 2 + 10))); // 20..120 دقيقة
+    const n = Math.min(M, highs.length);
+    const ln2 = Math.log(2);
+    let sumHL2 = 0, countHL = 0;
+    for(let i=highs.length - n; i<highs.length; i++){
+      const H = highs[i], L = lows[i];
+      if(H>0 && L>0 && isFinite(H) && isFinite(L)){
+        const x = Math.log(H/L);
+        if(isFinite(x)) { sumHL2 += x*x; countHL++; }
+      }
+    }
+    let sigma_pk = NaN;
+    if(countHL > 0){
+      const var_pk = (sumHL2 / countHL) / (4 * ln2);
+      sigma_pk = Math.sqrt(Math.max(var_pk, 0));
+    }
+
+    // 3) مزج تقديرين (blend) لثباتٍ أفضل
+    const alpha = 0.6; // وزن EWMA
+    if(isFinite(sigma_pk)){
+      sigma_pm = alpha * sigma_ewma + (1 - alpha) * sigma_pk;
+    }else{
+      sigma_pm = sigma_ewma;
+    }
+
+    renderAll(); // تحديث فوري
   }catch(e){}
 }
 
 /* ========= Expected Move ========= */
 function computeEM(){
-  const {minutesLeft: mLeft} = getHourWindowET();
-  minutesLeft = mLeft;
-  if(!isFinite(S) || !isFinite(sigma_pm) || mLeft<=0){ EM = NaN; return; }
-  const sigRootT = sigma_pm * Math.sqrt(mLeft); // σ√T (T بالدقائق)
-  EM = S * sigRootT; // بالدولار
+  const {minutesLeftPrecise} = getHourWindowET();
+  minutesLeft = minutesLeftPrecise;
+  if(!isFinite(S) || !isFinite(sigma_pm) || minutesLeft<=0){ EM = NaN; return; }
+
+  // σ لكل دقيقة × √T(بالدقائق) ⇒ تقريبي لمدى الحركة (لوج-نورمال ~ S*σ√T)
+  const sigRootT = sigma_pm * Math.sqrt(minutesLeftPrecise);
+  EM = S * sigRootT;
+
+  // استقرار عددي (تجنّب صفر أو قيم طفيفة جدًا)
+  const floor = S * 1e-6; // 0.0001%
+  if(!isFinite(EM) || EM < floor) EM = floor;
 }
 
-/* ========= UP/DOWN ========= */
-/* وضع 1: Poly-like  => z = gap/EM  → UP=Φ(z)
-   وضع 2: Black–Scholes d2 */
+/* ========= UP/DOWN (Poly-like) ========= */
 function computeUpDown(){
-  if(probMode === "poly"){
-    if(!isFinite(EM) || EM<=1e-9 || !isFinite(gap)) return {up:null, down:null};
-    const z = gap / EM;                         // gap موجب ⇒ ميل للـ UP
-    const upProb = clamp(normCDF(z), 0, 1);
-    return { up: upProb*100, down: (1 - upProb)*100 };
-  }else{
-    if(!isFinite(S) || !isFinite(PTB) || !isFinite(sigma_pm) || minutesLeft<=0)
-      return {up:null, down:null};
-    const T = Math.max(minutesLeft, 1e-9);      // دقائق
-    const sig = Math.max(sigma_pm, 1e-9);       // لكل دقيقة
-    const sigSqrtT = sig * Math.sqrt(T);
-    const d2 = (Math.log(S/PTB) - 0.5*sig*sig*T) / sigSqrtT;
-    const upProb = clamp(normCDF(d2), 0, 1);
-    return { up: upProb*100, down: (1 - upProb)*100 };
-  }
+  if(!isFinite(EM) || EM<=1e-12 || !isFinite(gap)) return {up:null, down:null};
+  // يمكن تهدئة الحساسية بمعامل zScale (اختياري): 0.9 أو 0.85
+  const zScale = 1.0;
+  const z = clamp((gap / EM) * zScale, -8, 8); // كبح الأطراف لثبات العرض
+  const upProb = clamp(normCDF(z), 0, 1);
+  return { up: upProb*100, down: (1 - upProb)*100 };
 }
 
-/* ========= Strength (0..100) — كما هو ========= */
+/* ========= Strength (0..100) — كما اتفقنا تبقى كما هي ========= */
 function computeStrength(){
   if(!isFinite(EM) || EM<=0 || !isFinite(gap)) return NaN;
   const ratio = Math.abs(gap) / EM;   // 0 => gap صغير جدًا
@@ -246,22 +262,19 @@ async function boot(){
   startWS();
   renderAll();
 
-  setInterval(fetchSigmaPerMinute, 60_000); // حدّث σ كل دقيقة
+  // حدّث σ باستمرار لتبقى حسّاسة لآخر الدقائق
+  setInterval(fetchSigmaPerMinute, 60_000);
+
+  // حدّث PTB مع بداية كل ساعة ET
   setInterval(async ()=>{
     const t = nowET();
     if(t.minute===0 && t.second<3){ await fetchPTB(); }
   }, 2_000);
-  setInterval(renderAll, 1000); // توقيت متبقّي
+
+  // تحديث واجهة كل ثانية
+  setInterval(renderAll, 1000);
 }
 boot();
-
-/* ========= UI: تبديل الوضع ========= */
-document.addEventListener("change", (e)=>{
-  if(e.target && e.target.name === "mode"){
-    probMode = e.target.value; // "poly" أو "bs"
-    renderAll();
-  }
-});
 </script>
 </body>
 </html>
