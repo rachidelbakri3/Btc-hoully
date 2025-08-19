@@ -63,7 +63,7 @@ function setText(id, text, colorClass=null){
 function signClass(n){ if(!isFinite(n)) return null; return n>=0 ? "pos":"neg"; }
 function nowET(){ return DateTime.now().setZone(TZ); }
 
-/* Normal CDF (بدون Math.erf) */
+/* Normal CDF (Abramowitz–Stegun, بدون Math.erf) */
 function normCDF(x){
   const a1=0.254829592, a2=-0.284496736, a3=1.421413741, a4=-1.453152027, a5=1.061405429;
   const p=0.3275911;
@@ -191,15 +191,15 @@ function computeEM(){
 }
 
 /* ========= UP/DOWN (Poly-like) ========= */
+const zScale = 0.9; // تهدئة خفيفة للاقتراب من سلوك Polymarket
 function computeUpDown(){
   if(!isFinite(EM) || EM<=1e-12 || !isFinite(gap)) return {up:null, down:null};
-  const zScale = 1.0;
   const z = clamp((gap / EM) * zScale, -8, 8);
   const upProb = clamp(normCDF(z), 0, 1);
   return { up: upProb*100, down: (1 - upProb)*100 };
 }
 
-/* ========= Strength (0..100) — كما اتفقنا تبقى كما هي ========= */
+/* ========= Strength (0..100) ========= */
 function computeStrength(){
   if(!isFinite(EM) || EM<=0 || !isFinite(gap)) return NaN;
   const ratio = Math.abs(gap) / EM;
@@ -244,6 +244,7 @@ function startWS(){
     const p = parseFloat(d.p);
     if(isFinite(p)){
       S = p;
+      // نحسب ونرسم فورًا مع كل Tick
       renderAll();
     }
   };
