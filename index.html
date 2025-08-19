@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -22,6 +22,8 @@
   .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace}
   .pos{color:var(--pos)} .neg{color:var(--neg)}
   .foot{color:var(--muted);font-size:12px;margin-top:18px;line-height:1.5}
+  .opts label{font-size:14px; font-weight:600; color:var(--ink);}
+  .opts input{transform: translateY(1px);}
 </style>
 </head>
 <body>
@@ -38,6 +40,14 @@
       <div class="row"><div class="lbl">STRENGTH (%)</div>      <div id="strVal"      class="val mono">—</div></div>
       <div class="row"><div class="lbl">UP %</div>              <div id="upVal"       class="val mono">—</div></div>
       <div class="row"><div class="lbl">DOWN %</div>            <div id="downVal"     class="val mono">—</div></div>
+      <!-- مفتاح التبديل -->
+      <div class="row">
+        <div class="lbl">PROB MODE</div>
+        <div class="val mono opts">
+          <label><input type="radio" name="mode" value="poly" checked> Poly-like</label>
+          <label style="margin-inline-start:14px;"><input type="radio" name="mode" value="bs"> Black–Scholes d2</label>
+        </div>
+      </div>
     </div>
 
     <div class="foot" id="footNote">Connecting…</div>
@@ -83,6 +93,7 @@ let sigma_pm = NaN; // per-minute volatility (EWMA of 1m returns)
 let EM = NaN;     // expected move ($)
 let ws = null;
 let lastFoot = "";
+let probMode = "poly"; // "poly" أو "bs"
 
 /* ========= Time Window (ET hour) ========= */
 function getHourWindowET(){
@@ -155,17 +166,28 @@ function computeEM(){
   EM = S * sigRootT; // بالدولار
 }
 
-/* ========= UP/DOWN (قريب من Polymarket) ========= */
-/* نستخدم z = gap / EM ⇒ UP = Φ(z), DOWN = 1-Φ(z)
-   يضمن 50/50 عندما gap=0، ويتكيف مع الوقت والتقلّب عبر EM */
+/* ========= UP/DOWN ========= */
+/* وضع 1: Poly-like  => z = gap/EM  → UP=Φ(z)
+   وضع 2: Black–Scholes d2 */
 function computeUpDown(){
-  if(!isFinite(EM) || EM<=1e-9 || !isFinite(gap)) return {up:null, down:null};
-  const z = gap / EM;                // gap موجب => ميل للـ UP
-  const upProb = clamp(normCDF(z), 0, 1);
-  return { up: upProb*100, down: (1 - upProb)*100 };
+  if(probMode === "poly"){
+    if(!isFinite(EM) || EM<=1e-9 || !isFinite(gap)) return {up:null, down:null};
+    const z = gap / EM;                         // gap موجب ⇒ ميل للـ UP
+    const upProb = clamp(normCDF(z), 0, 1);
+    return { up: upProb*100, down: (1 - upProb)*100 };
+  }else{
+    if(!isFinite(S) || !isFinite(PTB) || !isFinite(sigma_pm) || minutesLeft<=0)
+      return {up:null, down:null};
+    const T = Math.max(minutesLeft, 1e-9);      // دقائق
+    const sig = Math.max(sigma_pm, 1e-9);       // لكل دقيقة
+    const sigSqrtT = sig * Math.sqrt(T);
+    const d2 = (Math.log(S/PTB) - 0.5*sig*sig*T) / sigSqrtT;
+    const upProb = clamp(normCDF(d2), 0, 1);
+    return { up: upProb*100, down: (1 - upProb)*100 };
+  }
 }
 
-/* ========= Strength (0..100), تبقى كما هي ========= */
+/* ========= Strength (0..100) — كما هو ========= */
 function computeStrength(){
   if(!isFinite(EM) || EM<=0 || !isFinite(gap)) return NaN;
   const ratio = Math.abs(gap) / EM;   // 0 => gap صغير جدًا
@@ -232,6 +254,14 @@ async function boot(){
   setInterval(renderAll, 1000); // توقيت متبقّي
 }
 boot();
+
+/* ========= UI: تبديل الوضع ========= */
+document.addEventListener("change", (e)=>{
+  if(e.target && e.target.name === "mode"){
+    probMode = e.target.value; // "poly" أو "bs"
+    renderAll();
+  }
+});
 </script>
 </body>
 </html>
