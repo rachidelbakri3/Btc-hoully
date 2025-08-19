@@ -63,7 +63,7 @@ function setText(id, text, colorClass=null){
 function signClass(n){ if(!isFinite(n)) return null; return n>=0 ? "pos":"neg"; }
 function nowET(){ return DateTime.now().setZone(TZ); }
 
-/* Normal CDF (without Math.erf) - Abramowitz–Stegun approximation */
+/* Normal CDF (Abramowitz–Stegun, بدون Math.erf) */
 function normCDF(x){
   const a1=0.254829592, a2=-0.284496736, a3=1.421413741, a4=-1.453152027, a5=1.061405429;
   const p=0.3275911;
@@ -136,13 +136,13 @@ async function fetchSigmaPerMinute(){
       if(isFinite(r)) rets.push(r);
     }
 
-    const lambda = 0.96; // حساسية آخر الدقائق: قلّلها لحساسية أعلى (مثلاً 0.90)
+    const lambda = 0.96; // حساسية آخر الدقائق
     let v = rets.length ? rets[0]*rets[0] : 0;
     for(let i=1;i<rets.length;i++){
       v = lambda * v + (1-lambda) * (rets[i]*rets[i]);
     }
     sigma_pm = Math.sqrt(Math.max(v,0));
-    renderAll(); // تحديث فوري لاحتمالات UP/DOWN بعد وصول σ
+    renderAll(); // تحديث فوري بعد وصول σ
   }catch(e){}
 }
 
@@ -155,21 +155,17 @@ function computeEM(){
   EM = S * sigRootT; // بالدولار
 }
 
-/* ========= UP/DOWN via N(d2) ========= */
+/* ========= UP/DOWN (قريب من Polymarket) ========= */
+/* نستخدم z = gap / EM ⇒ UP = Φ(z), DOWN = 1-Φ(z)
+   يضمن 50/50 عندما gap=0، ويتكيف مع الوقت والتقلّب عبر EM */
 function computeUpDown(){
-  if(!isFinite(S) || !isFinite(PTB) || !isFinite(sigma_pm) || !isFinite(minutesLeft))
-    return {up:null, down:null};
-
-  const T   = Math.max(minutesLeft, 1e-9);
-  const sig = Math.max(sigma_pm,   1e-9);
-  const sigSqrtT = sig * Math.sqrt(T);
-
-  const d2 = (Math.log(S/PTB) - 0.5*sig*sig*T) / sigSqrtT;
-  const upProb = clamp(normCDF(d2), 0, 1);
+  if(!isFinite(EM) || EM<=1e-9 || !isFinite(gap)) return {up:null, down:null};
+  const z = gap / EM;                // gap موجب => ميل للـ UP
+  const upProb = clamp(normCDF(z), 0, 1);
   return { up: upProb*100, down: (1 - upProb)*100 };
 }
 
-/* ========= Strength (0..100), 50% عند |gap|=EM ========= */
+/* ========= Strength (0..100), تبقى كما هي ========= */
 function computeStrength(){
   if(!isFinite(EM) || EM<=0 || !isFinite(gap)) return NaN;
   const ratio = Math.abs(gap) / EM;   // 0 => gap صغير جدًا
@@ -180,7 +176,6 @@ function computeStrength(){
 /* ========= Render ========= */
 function renderAll(){
   setText("priceVal", isFinite(S)? fmtUSD(S) : "—");
-
   renderTimeLeft();
 
   gap = (isFinite(S) && isFinite(PTB)) ? (S - PTB) : NaN;
